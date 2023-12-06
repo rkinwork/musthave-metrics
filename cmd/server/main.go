@@ -1,12 +1,10 @@
 package main
 
 import (
+	"github.com/rkinwork/musthave-metrics/internal/server"
+	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"net/http"
-	"regexp"
 )
-
-var validNamePattern = regexp.MustCompile(`^[a-zA-Z]\w{0,127}$`)
-var mstore MemStorage
 
 func main() {
 	if err := run(); err != nil {
@@ -15,8 +13,9 @@ func main() {
 }
 
 func run() error {
-	mstore = InitLocalMemStorage()
+	storage := storage.GetLocalStorageModel()
+	updateHandler := server.GetUpdateHandler(storage)
 	mux := http.NewServeMux()
-	mux.HandleFunc(`/update/`, UpdateMetric)
+	mux.HandleFunc(`/update/`, updateHandler)
 	return http.ListenAndServe(`:8080`, mux)
 }
