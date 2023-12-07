@@ -22,13 +22,14 @@ func run() error {
 
 	mStorage := storage.GetLocalStorageModel()
 	knownMetrics := agent.GetCollectdMetricStorage()
+	mSender := agent.MetricSender{ServerAddress: serverAddress}
 	var i = 1
 	for {
 		if i%pollInterval == 0 {
 			agent.CollectMemMetrics(mStorage, knownMetrics)
 		}
 		if i%reportInterval == 0 {
-			agent.SendMetrics(mStorage, knownMetrics, serverAddress)
+			agent.SendMetrics(mStorage, knownMetrics, mSender)
 			i = 0
 		}
 		time.Sleep(time.Second * 1) // very naive could un sync

@@ -39,10 +39,10 @@ func GetUpdateHandler(repository storage.MemStorageModelInt) http.HandlerFunc {
 			return
 
 		case mType == storage.GaugeMetric:
-			err = repository.Add(storage.GaugeMetric, mName, mValue)
+			err = repository.Set(storage.GaugeMetric, mName, mValue)
 
 		case mType == storage.CounterMetric:
-			err = repository.Set(storage.CounterMetric, mName, mValue)
+			err = repository.Add(storage.CounterMetric, mName, mValue)
 
 		default:
 			err = errors.New(`unknown metric`)

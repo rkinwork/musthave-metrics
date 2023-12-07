@@ -1,3 +1,12 @@
+POST http://localhost:8080/update/gauge/roman/868434.234
+Content-Type: text/plain
+Content-Length: 0
+Connection: Keep-Alive
+User-Agent: Apache-HttpClient/4.5.14 (Java/17.0.9)
+Accept-Encoding: br,deflate,gzip,x-gzip
+
+###
+
 POST http://localhost:8080/update/unknown/testCounter/100
 Content-Type: text/plain
 Content-Length: 0

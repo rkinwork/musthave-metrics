@@ -89,7 +89,18 @@ func sumGauge(a, b string) (res string, err error) {
 		return res, err
 	}
 	return fmt.Sprintf("%f", ap+bp), err
+}
 
+func sumInt(a, b string) (res string, err error) {
+	ap, err := strconv.ParseInt(a, 10, 64)
+	if err != nil {
+		return res, err
+	}
+	bp, err := strconv.ParseInt(b, 10, 64)
+	if err != nil {
+		return res, err
+	}
+	return fmt.Sprintf("%d", ap+bp), err
 }
 
 type MemStorageModel struct {
@@ -105,7 +116,8 @@ func (m *MemStorageModel) Add(valType, name, val string) error {
 	if err != nil {
 		return err
 	}
-	if val, err = sumGauge(val, oldVal); err != nil {
+	// возможно  тут надо что-то делать в зависимости от метрики
+	if val, err = sumInt(val, oldVal); err != nil {
 		return err
 	}
 	return m.storage.Insert(valType, name, val)

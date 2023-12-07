@@ -8,6 +8,9 @@ import (
 	"runtime"
 )
 
+const PollCount = `PollCount`
+const RandomValue = `RandomValue`
+
 type ExtractedMetric struct {
 	mType  string
 	mValue string
@@ -29,8 +32,8 @@ func getMemMetrics() map[string]ExtractedMetric {
 	m := &runtime.MemStats{}
 	runtime.ReadMemStats(m)
 	return map[string]ExtractedMetric{
-		`PollCount`:   {storage.CounterMetric, `1`},
-		`RandomValue`: {storage.GaugeMetric, fmt.Sprintf(`%f'`, rand.Float64())},
+		PollCount:     {storage.CounterMetric, `1`},
+		RandomValue:   {storage.GaugeMetric, fmt.Sprintf(`%f'`, rand.Float64())},
 		`Alloc`:       {storage.GaugeMetric, fmt.Sprintf(`%d`, m.Alloc)},
 		`BuckHashSys`: {storage.GaugeMetric, fmt.Sprintf(`%d`, m.BuckHashSys)},
 	}
@@ -48,18 +51,27 @@ func CollectMemMetrics(storage storage.MemStorageModelInt, metrics *CollectedMet
 	}
 }
 
+type MetricSender struct {
+	ServerAddress string
+}
+
+func (m MetricSender) sendMetric(mType, mName, mVal string) error {
+	endPoint := fmt.Sprintf(`%s/update/%s/%s/%s`, m.ServerAddress, mType, mName, mVal)
+	//do not know what to do if request failed. just ignore
+	resp, err := http.Post(endPoint, "Content-Type: text/plain", nil)
+	if resp != nil {
+		_ = resp.Body.Close()
+	}
+	return err
+}
+
 func SendMetrics(
 	storage storage.MemStorageModelInt,
 	metrics *CollectedMetrics,
-	serverAddress string,
+	sender MetricSender,
 ) {
 	for metric := range metrics.m {
 		val, _ := storage.Get(metric.mType, metric.name)
-		endPoint := fmt.Sprintf(`%s/update/%s/%s/%s`, serverAddress, metric.mType, metric.name, val)
-		//do not know what to do if request failed. just ignore
-		resp, _ := http.Post(endPoint, "Content-Type: text/plain", nil)
-		if resp != nil {
-			_ = resp.Body.Close()
-		}
+		_ = sender.sendMetric(metric.mType, metric.name, val)
 	}
 }
