@@ -13,8 +13,7 @@ func main() {
 }
 
 func run() error {
-	updateHandler := server.GetUpdateHandler(storage.GetLocalStorageModel())
-	mux := http.NewServeMux()
-	mux.HandleFunc(`/update/`, updateHandler)
-	return http.ListenAndServe(`:8080`, mux)
+	st := storage.GetLocalStorageModel()
+	serverRouter := server.GetMetricsRouter(st)
+	return http.ListenAndServe(`:8080`, serverRouter)
 }

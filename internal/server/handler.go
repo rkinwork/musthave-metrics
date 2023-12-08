@@ -2,47 +2,81 @@ package server
 
 import (
 	"errors"
+	"fmt"
+	"github.com/go-chi/chi/v5"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
+	"html/template"
+	"log"
 	"net/http"
-	"strings"
 )
 
-func GetUpdateHandler(repository storage.MemStorageModelInt) http.HandlerFunc {
+func GetMetricsRouter(repository storage.MemStorageModelInt) chi.Router {
+	r := chi.NewRouter()
+	r.Get("/", getMainHandler(repository))
+	r.Route("/update", func(r chi.Router) {
+		r.Post("/{metricType}/{name}/{value}", getUpdateHandler(repository))
+	})
+	r.Route("/value", func(r chi.Router) {
+		r.Get("/{metricType}/{name}", getValueHandler(repository))
+	})
+	return r
+}
+
+func getMainHandler(repository storage.MemStorageModelInt) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
+		html := `<b>hello</b>
+{{range  .}}
+   <li>{{ . }}</li>
+{{end}}`
+		tmpl, err := template.New("index").Parse(html)
+		if err != nil {
+			log.Fatal(err)
 			return
 		}
-		if err := r.ParseForm(); err != nil {
-			w.Write([]byte(err.Error()))
+		metrics := repository.IterMetrics()
+		w.WriteHeader(http.StatusOK)
+		if len(metrics) > 0 {
+			_ = tmpl.Execute(w, metrics)
 			return
 		}
-		if len(r.Form) > 0 {
-			w.WriteHeader(http.StatusUnprocessableEntity)
-			w.Write([]byte("Parameters are not allowed in request"))
+		w.Write([]byte("empty response"))
+
+	}
+}
+
+func getValueHandler(repository storage.MemStorageModelInt) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		metricType := chi.URLParam(r, "metricType")
+		name := chi.URLParam(r, "name")
+		value, ok := repository.Get(metricType, name)
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		var data [4]string
-		params := strings.Split(strings.Trim(r.URL.Path, `/`), `/`)
-		for n, el := range params {
-			if n >= len(data) {
-				break
-			}
-			data[n] = el
-		}
-		mType, mName, mValue := data[1], data[2], data[3]
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprintf(w, "%s", value)
+	}
+}
+
+func getUpdateHandler(repository storage.MemStorageModelInt) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		metricType := chi.URLParam(r, "metricType")
+		name := chi.URLParam(r, "name")
+		value := chi.URLParam(r, "value")
 
 		var err error
 		switch {
-		case mValue == "":
+		case value == "":
 			w.WriteHeader(http.StatusNotFound)
 			return
 
-		case mType == storage.GaugeMetric:
-			err = repository.Set(storage.GaugeMetric, mName, mValue)
+		case metricType == storage.GaugeMetric:
+			err = repository.Set(storage.GaugeMetric, name, value)
 
-		case mType == storage.CounterMetric:
-			err = repository.Add(storage.CounterMetric, mName, mValue)
+		case metricType == storage.CounterMetric:
+			err = repository.Add(storage.CounterMetric, name, value)
 
 		default:
 			err = errors.New(`unknown metric`)
