@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"github.com/rkinwork/musthave-metrics/internal/server"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"net/http"
@@ -13,7 +14,10 @@ func main() {
 }
 
 func run() error {
+	address := flag.String("a", "", `server host and port`)
+	flag.Parse()
+	config := New(WithAddress(*address))
 	st := storage.GetLocalStorageModel()
 	serverRouter := server.GetMetricsRouter(st)
-	return http.ListenAndServe(`:8080`, serverRouter)
+	return http.ListenAndServe(config.address, serverRouter)
 }
