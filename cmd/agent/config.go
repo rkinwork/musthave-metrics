@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -32,6 +34,9 @@ func New(options ...Option) Config {
 
 func WithAddress(address string) Option {
 	return func(s *Config) {
+		if envAddress := os.Getenv("ADDRESS"); envAddress != "" {
+			address = envAddress
+		}
 		if address == "" {
 			return
 		}
@@ -44,6 +49,12 @@ func WithAddress(address string) Option {
 
 func WithPollInterval(second int) Option {
 	return func(s *Config) {
+		if envSecond := os.Getenv("POLL_INTERVAL"); envSecond != "" {
+			second, err := strconv.Atoi(envSecond)
+			if err != nil {
+				panic(fmt.Sprintf("couldn't parse value from vairiable: %d", second))
+			}
+		}
 		if second < 0 {
 			panic(fmt.Sprintf("poll interval couldn't be negative: %d", second))
 		}
@@ -55,6 +66,12 @@ func WithPollInterval(second int) Option {
 
 func WithReportInterval(second int) Option {
 	return func(s *Config) {
+		if envSecond := os.Getenv("REPORT_INTERVAL"); envSecond != "" {
+			second, err := strconv.Atoi(envSecond)
+			if err != nil {
+				panic(fmt.Sprintf("couldn't parse value from vairiable: %d", second))
+			}
+		}
 		if second < 0 {
 			panic(fmt.Sprintf("report interval couldn't be negative: %d", second))
 		}

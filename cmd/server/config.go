@@ -1,5 +1,7 @@
 package main
 
+import "os"
+
 const defaultAddress = `:8080`
 
 type Config struct {
@@ -9,6 +11,7 @@ type Config struct {
 type Option func(config *Config)
 
 func New(options ...Option) Config {
+
 	s := Config{
 		address: defaultAddress,
 	}
@@ -20,6 +23,9 @@ func New(options ...Option) Config {
 
 func WithAddress(address string) Option {
 	return func(s *Config) {
+		if envAddress := os.Getenv("ADDRESS"); envAddress != "" {
+			address = envAddress
+		}
 		if address == "" {
 			return
 		}
