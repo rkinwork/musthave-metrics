@@ -1,9 +1,10 @@
 package main
 
 import (
-	"flag"
 	"github.com/rkinwork/musthave-metrics/internal/agent"
+	"github.com/rkinwork/musthave-metrics/internal/config"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
+	"log"
 	"time"
 )
 
@@ -14,30 +15,23 @@ func main() {
 }
 
 func run() error {
-	address := flag.String("a", "", `server host and port`)
-	pollInterval := flag.Int("p", 0, `poll interval`)
-	reportInterval := flag.Int("r", 0, "time to report in seconds")
-	flag.Parse()
+	cnf, err := config.New()
+	if err != nil {
+		log.Fatalf("problems with config parsing %e", err)
+	}
 
-	config := New(
-		WithAddress(*address),
-		WithPollInterval(*pollInterval),
-		WithReportInterval(*reportInterval),
-	)
-
-	mStorage := storage.GetLocalStorageModel()
-	knownMetrics := agent.GetCollectdMetricStorage()
-	mSender := agent.MetricSender{ServerAddress: config.address}
+	repository := storage.NewInMemMetricRepository()
+	sender := agent.NewMetricSender(cnf.Address)
 	var i = 1
 	for {
-		if i%int(config.pollInterval/time.Second) == 0 {
-			agent.CollectMemMetrics(mStorage, knownMetrics)
+		if i%int(cnf.PollInterval/time.Second) == 0 {
+			agent.CollectMemMetrics(repository)
 		}
-		if i%int(config.pollInterval/time.Second) == 0 {
-			agent.SendMetrics(mStorage, knownMetrics, mSender)
+		if i%int(cnf.ReportInterval/time.Second) == 0 {
+			agent.SendMetrics(repository, sender)
 			i = 0
 		}
-		time.Sleep(time.Second * 1) // very naive proven
+		time.Sleep(time.Second * 1) // very naive proven to errors
 		i += 1
 	}
 }

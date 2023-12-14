@@ -1,9 +1,10 @@
 package main
 
 import (
-	"flag"
+	"github.com/rkinwork/musthave-metrics/internal/config"
 	"github.com/rkinwork/musthave-metrics/internal/server"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
+	"log"
 	"net/http"
 )
 
@@ -14,10 +15,11 @@ func main() {
 }
 
 func run() error {
-	address := flag.String("a", "", `server host and port`)
-	flag.Parse()
-	config := New(WithAddress(*address))
-	st := storage.GetLocalStorageModel()
-	serverRouter := server.GetMetricsRouter(st)
-	return http.ListenAndServe(config.address, serverRouter)
+	cnf, err := config.New()
+	if err != nil {
+		log.Fatalf("problems with config parsing %e", err)
+	}
+	st := storage.NewInMemMetricRepository()
+	serverRouter := server.NewMetricsRouter(st)
+	return http.ListenAndServe(cnf.Address, serverRouter)
 }

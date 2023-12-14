@@ -1,7 +1,6 @@
 package server
 
 import (
-	"errors"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
@@ -10,7 +9,14 @@ import (
 	"net/http"
 )
 
-func GetMetricsRouter(repository storage.MemStorageModelInt) chi.Router {
+var html = `
+<b>All Storage Metrics</b>
+{{range  .}}
+   <li>{{ . }}</li>
+{{end}}`
+var indexTemplate = template.Must(template.New("index").Parse(html))
+
+func NewMetricsRouter(repository *storage.MetricRepository) chi.Router {
 	r := chi.NewRouter()
 	r.Get("/", getMainHandler(repository))
 	r.Route("/update", func(r chi.Router) {
@@ -22,71 +28,70 @@ func GetMetricsRouter(repository storage.MemStorageModelInt) chi.Router {
 	return r
 }
 
-func getMainHandler(repository storage.MemStorageModelInt) http.HandlerFunc {
+func getMainHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		html := `<b>hello</b>
-{{range  .}}
-   <li>{{ . }}</li>
-{{end}}`
-		tmpl, err := template.New("index").Parse(html)
-		if err != nil {
-			log.Fatal(err)
-			return
-		}
+
+		var err error
 		metrics := repository.IterMetrics()
 		w.WriteHeader(http.StatusOK)
 		if len(metrics) > 0 {
-			_ = tmpl.Execute(w, metrics)
+			err = indexTemplate.Execute(w, metrics)
 			return
 		}
-		w.Write([]byte("empty response"))
+		_, err = w.Write([]byte("Empty storage"))
+
+		if err != nil {
+			log.Printf("problems with hadeling %e", err)
+		}
 
 	}
 }
 
-func getValueHandler(repository storage.MemStorageModelInt) http.HandlerFunc {
+func getValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		metricType := chi.URLParam(r, "metricType")
 		name := chi.URLParam(r, "name")
-		value, ok := repository.Get(metricType, name)
-		if !ok {
+		metric, err := storage.ParseMetric(metricType, name, "0")
+		if err != nil {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		value, ok, err := repository.Get(metric)
+
+		if !ok || err != nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, "%s", value)
+		_, err = fmt.Fprintf(w, "%s", value.ExportValue())
+		if err != nil {
+			log.Printf("problems with writing response %e", err)
+		}
 	}
 }
 
-func getUpdateHandler(repository storage.MemStorageModelInt) http.HandlerFunc {
+func getUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		metricType := chi.URLParam(r, "metricType")
 		name := chi.URLParam(r, "name")
 		value := chi.URLParam(r, "value")
 
-		var err error
-		switch {
-		case value == "":
+		if value == "" {
 			w.WriteHeader(http.StatusNotFound)
 			return
-
-		case metricType == storage.GaugeMetric:
-			err = repository.Set(storage.GaugeMetric, name, value)
-
-		case metricType == storage.CounterMetric:
-			err = repository.Add(storage.CounterMetric, name, value)
-
-		default:
-			err = errors.New(`unknown metric`)
 		}
 
+		metric, err := storage.ParseMetric(metricType, name, value)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-
+		if err := repository.Collect(metric); err == nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		w.WriteHeader(http.StatusBadRequest)
 	}
 }

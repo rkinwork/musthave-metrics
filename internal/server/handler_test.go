@@ -25,14 +25,15 @@ func testRequest(t *testing.T, ts *httptest.Server, method,
 	return resp.StatusCode, string(respBody)
 }
 
-func TestGetValueHandler(t *testing.T) {
-	s := storage.GetLocalStorageModel()
-	err := s.Set("counter", "clicks", "5")
+func TestValueHandler(t *testing.T) {
+	repo := storage.NewInMemMetricRepository()
+	err := repo.Set(storage.Counter{Name: "clicks", Value: 5})
 	require.NoError(t, err)
-	ts := httptest.NewServer(GetMetricsRouter(s))
+	ts := httptest.NewServer(NewMetricsRouter(repo))
 	defer ts.Close()
 	type want struct {
-		code int
+		code         int
+		responseText string
 	}
 	tests := []struct {
 		name     string
@@ -43,35 +44,39 @@ func TestGetValueHandler(t *testing.T) {
 			name:     "positive flow counter",
 			endpoint: "/value/counter/clicks",
 			want: want{
-				code: http.StatusOK,
+				code:         http.StatusOK,
+				responseText: "5",
 			},
 		},
 		{
 			name:     "positive flow counter 2",
 			endpoint: "/value/counter/clicks/",
 			want: want{
-				code: http.StatusNotFound,
+				code:         http.StatusNotFound,
+				responseText: "404 page not found\n",
 			},
 		},
 		{
 			name:     "negative flow counter",
 			endpoint: "/value/counter/unknown",
 			want: want{
-				code: http.StatusNotFound,
+				code:         http.StatusNotFound,
+				responseText: "",
 			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			statusCode, _ := testRequest(t, ts, "GET", tc.endpoint)
+			statusCode, responseText := testRequest(t, ts, "GET", tc.endpoint)
 			assert.Equal(t, tc.want.code, statusCode)
+			assert.Equal(t, tc.want.responseText, responseText)
 
 		})
 	}
 }
 
-func TestGetUpdateHandler(t *testing.T) {
-	ts := httptest.NewServer(GetMetricsRouter(storage.GetLocalStorageModel()))
+func TestUpdateHandler(t *testing.T) {
+	ts := httptest.NewServer(NewMetricsRouter(storage.NewInMemMetricRepository()))
 	defer ts.Close()
 	type want struct {
 		code int

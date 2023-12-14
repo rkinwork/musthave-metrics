@@ -1,9 +1,7 @@
 package storage
 
 import (
-	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 )
 
@@ -12,188 +10,210 @@ const (
 	CounterMetric = `counter`
 )
 
-const defaultMetricVal = `0`
-const metricValueMaxLength = 20
-
-var validNamePattern = regexp.MustCompile(`^[a-zA-Z]\w{0,127}$`)
-var validGaugePattern = regexp.MustCompile(`^-?\d+(\.\d+)*$`)
-var validCounterPattern = regexp.MustCompile(`^\d+$`)
-
-type MemMetric struct {
-	metricType   string
-	name         string
-	value        string
-	defaultValue string
+type Metric interface {
+	GetName() string
+	ExportValue() string
+	ExportTypeName() string
 }
 
-// todo Add String()
-
-type MemStorageModelInt interface {
-	Add(valType, name, val string) error
-	Set(valType, name, val string) error
-	Get(valType, name string) (string, bool)
-	InsertBy(valType, name, val string) error
-	IterMetrics() []MemMetric
+type Counter struct {
+	Name  string
+	Value int64
 }
 
-type MemStorage interface {
-	Insert(valType, name, val string) error
-	GetOrDefault(valType, name, defVal string) (string, bool)
-	GetTypes() []string
-	GetNames(metricType string) []string
+func (c Counter) GetName() string {
+	return c.Name
 }
 
-type LocalMemStorage struct {
-	m map[string]map[string]string
+func (c Counter) ExportValue() string {
+	return fmt.Sprintf("%d", c.Value)
 }
 
-func (s *LocalMemStorage) Insert(valType, name, val string) error {
-	s.m[valType][name] = val
+func (c Counter) ExportTypeName() string {
+	return CounterMetric
+}
+
+type Gauge struct {
+	Name  string
+	Value float64
+}
+
+func (g Gauge) GetName() string {
+	return g.Name
+}
+
+func (g Gauge) ExportValue() string {
+	return strconv.FormatFloat(g.Value, 'f', -1, 64)
+}
+
+func (g Gauge) ExportTypeName() string {
+	return GaugeMetric
+}
+
+type GaugeStorage interface {
+	Get(metric Gauge) (Gauge, bool)
+	Set(metric Gauge) error
+	Delete(metric Gauge) error
+	IterMetrics() []Metric
+}
+
+type CounterStorage interface {
+	Get(metric Counter) (Counter, bool)
+	Set(metric Counter) error
+	Delete(metric Counter) error
+	IterMetrics() []Metric
+}
+
+type InMemCounterStorage struct {
+	m map[string]Counter
+}
+
+func (i *InMemCounterStorage) Get(metric Counter) (Counter, bool) {
+	res, ok := i.m[metric.GetName()]
+	return res, ok
+}
+
+func (i *InMemCounterStorage) Set(metric Counter) error {
+	i.m[metric.GetName()] = metric
 	return nil
 }
 
-func (s *LocalMemStorage) GetOrDefault(valType, name, defVal string) (string, bool) {
-	val, ok := s.m[valType][name]
-	if !ok {
-		return defVal, ok
-	}
-	return val, ok
+func (i *InMemCounterStorage) Delete(metric Counter) error {
+	delete(i.m, metric.GetName())
+	return nil
 }
 
-func (s *LocalMemStorage) GetTypes() []string {
-	metricTypes := make([]string, len(s.m))
-
-	i := 0
-	for k := range s.m {
-		metricTypes[i] = k
-		i++
+func (i *InMemCounterStorage) IterMetrics() []Metric {
+	var res []Metric
+	for _, metric := range i.m {
+		res = append(res, metric)
 	}
-	return metricTypes
+	return res
 }
 
-func (s *LocalMemStorage) GetNames(metricType string) []string {
-	metricNames := make([]string, len(s.m[metricType]))
-
-	i := 0
-	for k := range s.m[metricType] {
-		metricNames[i] = k
-		i++
-	}
-	return metricNames
+type InMemGaugeStorage struct {
+	m map[string]Gauge
 }
 
-func validateMetric(valType, name, val string) error {
-	var err error
-	if !validNamePattern.MatchString(name) {
-		return errors.New("not valid metric name")
+func (i *InMemGaugeStorage) Get(metric Gauge) (Gauge, bool) {
+	res, ok := i.m[metric.GetName()]
+	return res, ok
+}
+
+func (i *InMemGaugeStorage) Set(metric Gauge) error {
+	i.m[metric.GetName()] = metric
+	return nil
+}
+
+func (i *InMemGaugeStorage) Delete(metric Gauge) error {
+	delete(i.m, metric.GetName())
+	return nil
+}
+
+func (i *InMemGaugeStorage) IterMetrics() []Metric {
+	var res []Metric
+	for _, metric := range i.m {
+		res = append(res, metric)
 	}
-	if len(val) > metricValueMaxLength {
-		return errors.New("not valid metric value")
+	return res
+}
+
+type MetricRepository struct {
+	gaugeStorage   GaugeStorage
+	counterStorage CounterStorage
+}
+
+func (m *MetricRepository) Collect(metric Metric) error {
+	switch v := metric.(type) {
+	case Counter:
+		return m.Add(v)
+	case Gauge:
+		return m.Set(v)
 	}
-	switch valType {
-	case GaugeMetric:
-		if !validGaugePattern.MatchString(val) {
-			err = errors.New("not valid metric value")
+	return fmt.Errorf("unknown type %t", metric)
+}
+
+func (m *MetricRepository) Add(metric Metric) error {
+	switch v := metric.(type) {
+	case Counter:
+		old, _ := m.counterStorage.Get(v)
+		v.Value = v.Value + old.Value
+		return m.counterStorage.Set(v)
+	case Gauge:
+		old, _ := m.gaugeStorage.Get(v)
+		v.Value = v.Value + old.Value
+		return m.gaugeStorage.Set(v)
+	}
+	return fmt.Errorf("unknown type %t", metric)
+}
+
+func (m *MetricRepository) Set(metric Metric) error {
+	switch v := metric.(type) {
+	case Counter:
+		return m.counterStorage.Set(v)
+	case Gauge:
+		return m.gaugeStorage.Set(v)
+	}
+	return fmt.Errorf("unknown type %t", metric)
+}
+
+func (m *MetricRepository) Get(metric Metric) (Metric, bool, error) {
+	switch v := metric.(type) {
+	case Counter:
+		res, ok := m.counterStorage.Get(v)
+		return res, ok, nil
+	case Gauge:
+		res, ok := m.gaugeStorage.Get(v)
+		return res, ok, nil
+	}
+	return metric, false, fmt.Errorf("unknown type %t", metric)
+}
+
+func (m *MetricRepository) Delete(metric Metric) error {
+	switch v := metric.(type) {
+	case Counter:
+		return m.counterStorage.Delete(v)
+	case Gauge:
+		return m.gaugeStorage.Delete(v)
+	}
+	return fmt.Errorf("unknown type %t", metric)
+}
+
+func (m *MetricRepository) IterMetrics() []Metric {
+	allMetrics := make([]Metric, 0)
+	for _, metricType := range m.GetTypes() {
+		metrics, err := m.GetMetricsBy(metricType)
+		if err != nil {
+			panic(err)
 		}
-	case CounterMetric:
-		if !validCounterPattern.MatchString(val) {
-			err = errors.New("not valid metric value")
-		}
-	default:
-		err = errors.New("not valid metric type")
-	}
-	if err != nil {
-		return err
-	}
-	return err
-}
-
-func sumGauge(a, b string) (res string, err error) {
-	ap, err := strconv.ParseFloat(a, 64)
-	if err != nil {
-		return res, err
-	}
-	bp, err := strconv.ParseFloat(b, 64)
-	if err != nil {
-		return res, err
-	}
-	return fmt.Sprintf("%f", ap+bp), err
-}
-
-func sumInt(a, b string) (res string, err error) {
-	ap, err := strconv.ParseInt(a, 10, 64)
-	if err != nil {
-		return res, err
-	}
-	bp, err := strconv.ParseInt(b, 10, 64)
-	if err != nil {
-		return res, err
-	}
-	return fmt.Sprintf("%d", ap+bp), err
-}
-
-type MemStorageModel struct {
-	storage MemStorage
-}
-
-func (m *MemStorageModel) Add(valType, name, val string) error {
-
-	if err := validateMetric(valType, name, val); err != nil {
-		return err
-	}
-	currentVal, _ := m.storage.GetOrDefault(valType, name, defaultMetricVal)
-	val, err := sumInt(val, currentVal)
-	if err != nil {
-		return err
-	}
-	return m.storage.Insert(valType, name, val)
-}
-
-func (m *MemStorageModel) Set(valType, name, val string) error {
-	if err := validateMetric(valType, name, val); err != nil {
-		return err
-	}
-	return m.storage.Insert(valType, name, val)
-}
-
-func (m *MemStorageModel) Get(valType, name string) (string, bool) {
-	return m.storage.GetOrDefault(valType, name, defaultMetricVal)
-}
-
-func (m *MemStorageModel) InsertBy(valType, name, val string) error {
-	if err := validateMetric(valType, name, val); err != nil {
-		return err
-	}
-	switch valType {
-	case CounterMetric:
-		return m.Add(valType, name, val)
-	case GaugeMetric:
-		return m.Set(valType, name, val)
-	}
-	return errors.New(`unknown metric type`)
-}
-
-func (m *MemStorageModel) IterMetrics() []MemMetric {
-	allMetrics := make([]MemMetric, 0)
-	for _, metricType := range m.storage.GetTypes() {
-		for _, metricName := range m.storage.GetNames(metricType) {
-			value, _ := m.storage.GetOrDefault(metricType, metricName, "0")
-			allMetrics = append(allMetrics,
-				MemMetric{
-					metricType: metricType,
-					name:       metricName,
-					value:      value,
-				})
-		}
+		allMetrics = append(allMetrics, metrics...)
 	}
 	return allMetrics
 }
 
-func GetLocalStorageModel() MemStorageModelInt {
-	mMap := map[string]map[string]string{}
-	mMap[GaugeMetric] = map[string]string{}
-	mMap[CounterMetric] = map[string]string{}
+func (m *MetricRepository) GetTypes() []string {
+	return []string{GaugeMetric, CounterMetric}
+}
 
-	return &MemStorageModel{storage: &LocalMemStorage{m: mMap}}
+func (m *MetricRepository) GetMetricsBy(metricType string) ([]Metric, error) {
+	switch metricType {
+	case CounterMetric:
+		return m.counterStorage.IterMetrics(), nil
+	case GaugeMetric:
+		return m.gaugeStorage.IterMetrics(), nil
+	}
+	return []Metric{}, fmt.Errorf("unknown metric type %s", metricType)
+}
 
+func NewMetricRepository(g GaugeStorage, c CounterStorage) *MetricRepository {
+	return &MetricRepository{
+		g,
+		c,
+	}
+}
+
+func NewInMemMetricRepository() *MetricRepository {
+	g := &InMemGaugeStorage{m: make(map[string]Gauge)}
+	c := &InMemCounterStorage{m: make(map[string]Counter)}
+	return NewMetricRepository(g, c)
 }

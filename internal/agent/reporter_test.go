@@ -7,16 +7,15 @@ import (
 )
 
 func TestCollectMemMetricsCounter(t *testing.T) {
-	mStorage := storage.GetLocalStorageModel()
-	knownMetrics := GetCollectdMetricStorage()
-	CollectMemMetrics(mStorage, knownMetrics)
-	val, _ := mStorage.Get(storage.CounterMetric, PollCount)
-	assert.Equal(t, `1`, val)
-	CollectMemMetrics(mStorage, knownMetrics)
-	val, _ = mStorage.Get(storage.CounterMetric, PollCount)
-	assert.Equal(t, `2`, val)
-	CollectMemMetrics(mStorage, knownMetrics)
-	val, _ = mStorage.Get(storage.CounterMetric, PollCount)
-	assert.NotEqual(t, `5`, val)
+	repository := storage.NewInMemMetricRepository()
+	CollectMemMetrics(repository)
+	val, _, _ := repository.Get(storage.Counter{Name: PollCount})
+	assert.Equal(t, `1`, val.ExportValue())
+	CollectMemMetrics(repository)
+	val, _, _ = repository.Get(storage.Counter{Name: PollCount})
+	assert.Equal(t, `2`, val.ExportValue())
+	CollectMemMetrics(repository)
+	val, _, _ = repository.Get(storage.Counter{Name: PollCount})
+	assert.NotEqual(t, `5`, val.ExportValue())
 
 }
