@@ -9,89 +9,82 @@ import (
 	"net/http"
 )
 
-var html = `
-<b>All Storage Metrics</b>
-{{range  .}}
-   <li>{{ . }}</li>
-{{end}}`
-var indexTemplate = template.Must(template.New("index").Parse(html))
+var indexTemplate = template.Must(template.New("index").Parse(GenerateHTML()))
 
 func NewMetricsRouter(repository *storage.MetricRepository) chi.Router {
-	r := chi.NewRouter()
-	r.Get("/", getMainHandler(repository))
-	r.Route("/update", func(r chi.Router) {
-		r.Post("/{metricType}/{name}/{value}", getUpdateHandler(repository))
+	router := chi.NewRouter()
+	router.Get("/", getMainHandler(repository))
+	router.Route("/update", func(router chi.Router) {
+		router.Post("/{metricType}/{name}/{value}", getUpdateHandler(repository))
 	})
-	r.Route("/value", func(r chi.Router) {
-		r.Get("/{metricType}/{name}", getValueHandler(repository))
+	router.Route("/value", func(router chi.Router) {
+		router.Get("/{metricType}/{name}", getValueHandler(repository))
 	})
-	return r
+	return router
 }
 
 func getMainHandler(repository *storage.MetricRepository) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-
-		var err error
-		metrics := repository.IterMetrics()
-		w.WriteHeader(http.StatusOK)
+	return func(writer http.ResponseWriter, request *http.Request) {
+		metrics := repository.GetAllMetrics()
+		writer.WriteHeader(http.StatusOK)
 		if len(metrics) > 0 {
-			err = indexTemplate.Execute(w, metrics)
+			err := indexTemplate.Execute(writer, metrics)
+			logError(0, err)
 			return
 		}
-		_, err = w.Write([]byte("Empty storage"))
-
-		if err != nil {
-			log.Printf("problems with hadeling %e", err)
-		}
-
+		logError(writer.Write([]byte("Empty storage")))
 	}
 }
 
 func getValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		metricType := chi.URLParam(r, "metricType")
-		name := chi.URLParam(r, "name")
-		metric, err := storage.ParseMetric(metricType, name, "0")
+	return func(writer http.ResponseWriter, request *http.Request) {
+		metricType, name := chi.URLParam(request, "metricType"), chi.URLParam(request, "name")
+		_, err := storage.ParseMetric(metricType, name, "0")
 		if err != nil {
-			w.WriteHeader(http.StatusNotFound)
+			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
-		value, ok, err := repository.Get(metric)
-
+		value, ok, err := repository.Get(metricType, name)
 		if !ok || err != nil {
-			w.WriteHeader(http.StatusNotFound)
+			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
-		w.Header().Set("Content-Type", "text/plain")
-		w.WriteHeader(http.StatusOK)
-		_, err = fmt.Fprintf(w, "%s", value.ExportValue())
-		if err != nil {
-			log.Printf("problems with writing response %e", err)
-		}
+		writer.Header().Set("Content-Type", "text/plain")
+		writer.WriteHeader(http.StatusOK)
+		logError(fmt.Fprintf(writer, "%s", value.ExportValue()))
 	}
 }
 
 func getUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-
-		metricType := chi.URLParam(r, "metricType")
-		name := chi.URLParam(r, "name")
-		value := chi.URLParam(r, "value")
-
+	return func(writer http.ResponseWriter, request *http.Request) {
+		metricType, name, value := chi.URLParam(request, "metricType"), chi.URLParam(request, "name"), chi.URLParam(request, "value")
 		if value == "" {
-			w.WriteHeader(http.StatusNotFound)
+			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
-
 		metric, err := storage.ParseMetric(metricType, name, value)
 		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
+			writer.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if err := repository.Collect(metric); err == nil {
-			w.WriteHeader(http.StatusOK)
+		if repository.Collect(metric) == nil {
+			writer.WriteHeader(http.StatusOK)
 			return
 		}
-		w.WriteHeader(http.StatusBadRequest)
+		writer.WriteHeader(http.StatusBadRequest)
 	}
+}
+
+func logError(_ int, err error) {
+	if err != nil {
+		log.Printf("An error occurred: %v\n", err)
+	}
+}
+
+func GenerateHTML() string {
+	return `
+<b>All Storage Metrics</b>
+{{range  .}}
+   <li>{{ . }}</li>
+{{end}}`
 }

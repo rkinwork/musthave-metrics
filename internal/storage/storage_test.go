@@ -81,8 +81,8 @@ func TestGetFromRepository(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			g := &InMemGaugeStorage{m: make(map[string]Gauge)}
-			c := &InMemCounterStorage{m: make(map[string]Counter)}
+			g := NewInMemMetricStorage()
+			c := NewInMemMetricStorage()
 			repo := NewMetricRepository(g, c)
 			var err error
 			switch v := tc.input.(type) {
@@ -94,10 +94,13 @@ func TestGetFromRepository(t *testing.T) {
 				panic("unknown type")
 			}
 			require.NoError(t, err)
-			metric, ok, err := repo.Get(tc.metric)
+			metric, ok, err := repo.Get(tc.metric.ExportTypeName(), tc.metric.GetName())
 			require.NoError(t, err)
 			assert.Equal(t, tc.want.ok, ok)
-			assert.Equal(t, tc.want.value, metric.ExportValue())
+			if ok {
+				assert.Equal(t, tc.want.value, metric.ExportValue())
+			}
+
 		})
 	}
 }

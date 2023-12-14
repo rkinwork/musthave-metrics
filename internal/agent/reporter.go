@@ -71,30 +71,38 @@ func (s *MetricSender) SendMetric(metric storage.Metric) error {
 	return err
 }
 
+func formatServerAddress(rawAddress string) string {
+	addressWithLocalhost := rawAddress
+	if strings.HasPrefix(rawAddress, `:`) {
+		addressWithLocalhost = `localhost` + rawAddress
+	}
+
+	formattedAddress := addressWithLocalhost
+	if !strings.HasPrefix(addressWithLocalhost, `http://`) {
+		formattedAddress = `http://` + addressWithLocalhost
+	}
+
+	return formattedAddress
+}
+
 func NewMetricSender(serverAddress string) *MetricSender {
-	if strings.HasPrefix(serverAddress, `:`) {
-		serverAddress = `localhost` + serverAddress
-	}
-	if !strings.HasPrefix(serverAddress, `http://`) {
-		serverAddress = `http://` + serverAddress
-	}
+	formattedServerAddress := formatServerAddress(serverAddress)
 	c := resty.New()
 	c.SetRetryCount(retries)
 	return &MetricSender{
-		ServerAddress: serverAddress,
+		ServerAddress: formattedServerAddress,
 		Client:        c,
 	}
 }
 
-func SendMetrics(
-	storage *storage.MetricRepository,
-	sender *MetricSender,
-) {
-
-	for _, metric := range storage.IterMetrics() {
+func SendMetrics(repository *storage.MetricRepository, sender *MetricSender) {
+	for _, metric := range repository.GetAllMetrics() {
 		if err := sender.SendMetric(metric); err != nil {
-			log.Printf("problems with sending: %v, %e", metric, err)
+			logError(metric, err)
 		}
-
 	}
+}
+
+func logError(metric storage.Metric, err error) {
+	log.Printf("Problems with sending: %v, %v", metric, err)
 }

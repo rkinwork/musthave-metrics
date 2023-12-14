@@ -27,7 +27,7 @@ func testRequest(t *testing.T, ts *httptest.Server, method,
 
 func TestValueHandler(t *testing.T) {
 	repo := storage.NewInMemMetricRepository()
-	err := repo.Set(storage.Counter{Name: "clicks", Value: 5})
+	err := repo.Collect(storage.Counter{Name: "clicks", Value: 5})
 	require.NoError(t, err)
 	ts := httptest.NewServer(NewMetricsRouter(repo))
 	defer ts.Close()
