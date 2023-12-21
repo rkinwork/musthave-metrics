@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"github.com/rkinwork/musthave-metrics/internal/config"
 	"strconv"
 )
 
@@ -143,6 +144,13 @@ func NewMetricRepository(g MetricStorage, c MetricStorage) *MetricRepository {
 			GaugeMetric:   g,
 			CounterMetric: c,
 		},
+	}
+}
+
+func NewRepository(cfg *config.Config) *MetricRepository {
+	switch cfg.StorageType {
+	default:
+		return NewInMemMetricRepository()
 	}
 }
 

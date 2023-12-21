@@ -76,7 +76,8 @@ func TestValueHandler(t *testing.T) {
 }
 
 func TestUpdateHandler(t *testing.T) {
-	ts := httptest.NewServer(NewMetricsRouter(storage.NewInMemMetricRepository()))
+	repo := storage.NewInMemMetricRepository()
+	ts := httptest.NewServer(NewMetricsRouter(repo))
 	defer ts.Close()
 	type want struct {
 		code int
