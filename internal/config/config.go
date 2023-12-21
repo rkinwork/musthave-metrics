@@ -14,21 +14,30 @@ type Config struct {
 	Address        string
 	ReportInterval time.Duration
 	PollInterval   time.Duration
+	StorageType    string
 }
 
 const (
 	defaultAddr           = ":8080"
 	defaultReportInterval = 10 // in seconds
 	defaultPollInterval   = 2  // in seconds
+	defaultStorageType    = "inmemory"
 )
 
-func New() (*Config, error) {
-	cfg := &Config{}
-	if err := loadFromFlags(cfg); err != nil {
-		return nil, err
+func New(production bool) (*Config, error) {
+	cfg := &Config{
+		Address:        defaultAddr,
+		ReportInterval: defaultReportInterval,
+		PollInterval:   defaultPollInterval,
+		StorageType:    defaultStorageType,
 	}
-	if err := loadFromEnv(cfg); err != nil {
-		return nil, err
+	if production {
+		if err := loadFromFlags(cfg); err != nil {
+			return nil, err
+		}
+		if err := loadFromEnv(cfg); err != nil {
+			return nil, err
+		}
 	}
 	return cfg, nil
 }
@@ -38,6 +47,7 @@ func loadFromEnv(cfg *Config) error {
 		Addr           string `env:"ADDRESS"`
 		ReportInterval int64  `env:"REPORT_INTERVAL"`
 		PollInterval   int64  `env:"POLL_INTERVAL"`
+		StorageType    string `env:"STORAGE_TYPE"`
 	}{}
 
 	if err := env.Parse(&parsedConfig); err != nil {
@@ -46,6 +56,9 @@ func loadFromEnv(cfg *Config) error {
 
 	if parsedConfig.Addr != "" {
 		cfg.Address = parsedConfig.Addr
+	}
+	if parsedConfig.StorageType != "" {
+		cfg.StorageType = parsedConfig.StorageType
 	}
 	if parsedConfig.ReportInterval <= 0 || parsedConfig.PollInterval <= 0 {
 		log.Println("negative intervals are not allowed. Use defaults")
@@ -66,6 +79,7 @@ func loadFromFlags(cfg *Config) error {
 	addr := flagSet.String("a", defaultAddr, "server host and port")
 	reportInterval := flagSet.Int64("r", defaultReportInterval, "How ofter agent should send data to server")
 	pollInterval := flagSet.Int64("p", defaultPollInterval, "How often agent should extract metrics")
+	storageType := flagSet.String("s", defaultStorageType, "Storage type configuration")
 
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		return fmt.Errorf("failed to parse flags: %w", err)
@@ -74,6 +88,7 @@ func loadFromFlags(cfg *Config) error {
 	cfg.Address = *addr
 	cfg.ReportInterval = time.Duration(*reportInterval) * time.Second
 	cfg.PollInterval = time.Duration(*pollInterval) * time.Second
+	cfg.StorageType = *storageType
 
 	return nil
 }

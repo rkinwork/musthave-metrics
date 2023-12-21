@@ -3,6 +3,7 @@ package server
 import (
 	"fmt"
 	"github.com/go-chi/chi/v5"
+	"github.com/rkinwork/musthave-metrics/internal/logger"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"html/template"
 	"log"
@@ -13,6 +14,7 @@ var indexTemplate = template.Must(template.New("index").Parse(GenerateHTML()))
 
 func NewMetricsRouter(repository *storage.MetricRepository) chi.Router {
 	router := chi.NewRouter()
+	router.Use(logger.WithLogging)
 	router.Get("/", getMainHandler(repository))
 	router.Route("/update", func(router chi.Router) {
 		router.Post("/{metricType}/{name}/{value}", getUpdateHandler(repository))
