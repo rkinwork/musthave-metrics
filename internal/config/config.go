@@ -60,7 +60,7 @@ func loadFromEnv(cfg *Config) error {
 	if parsedConfig.StorageType != "" {
 		cfg.StorageType = parsedConfig.StorageType
 	}
-	if parsedConfig.ReportInterval <= 0 || parsedConfig.PollInterval <= 0 {
+	if parsedConfig.ReportInterval < 0 || parsedConfig.PollInterval < 0 {
 		log.Println("negative intervals are not allowed. Use defaults")
 	}
 	if parsedConfig.ReportInterval > 0 {

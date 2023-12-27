@@ -68,11 +68,12 @@ type MetricSender struct {
 func (s *MetricSender) SendMetric(metric storage.Metric) error {
 	endPoint := fmt.Sprintf(`%s/update/`, s.ServerAddress)
 	s.R().SetHeader("Content-Type", "application/json")
-	metrics, err := storage.ConvertTo(metric)
+	metrics, err := storage.ConvertToSend(metric)
 	if err != nil {
 		return err
 	}
-	_, err = s.R().SetBody(metrics).Post(endPoint)
+	bd := storage.MetricsRequest{Metrics: metrics}
+	_, err = s.R().SetBody(bd).Post(endPoint)
 	return err
 }
 

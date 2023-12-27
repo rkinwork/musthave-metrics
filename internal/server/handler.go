@@ -15,6 +15,7 @@ import (
 const (
 	badRequestError         = "mailformed request"
 	problemsWithServerError = "problems with server error"
+	metricNotFountError     = "metric not found"
 )
 
 var indexTemplate = template.Must(template.New("index").Parse(GenerateHTML()))
@@ -69,37 +70,50 @@ func getValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
 func getJSONValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		contentType := request.Header.Get("Content-type")
-		if contentType != "application/json" {
-			writer.WriteHeader(http.StatusUnsupportedMediaType)
-			return
-		}
+		writer.Header().Set("Content-Type", "application/json")
+		var errorResp storage.ErrorResponse
+		resp := storage.MetricsResponse{ErrorResponse: &errorResp}
+		enc := json.NewEncoder(writer)
+
 		defer func() {
 			err := request.Body.Close()
 			logError(0, err)
 		}()
+		defer func() {
+			writer.WriteHeader(http.StatusBadRequest)
+			if err := enc.Encode(resp); err != nil {
+				logger.Log.Debug("error encoding response", zap.Error(err))
+				return
+			}
 
-		m, err := storage.ParseJSONRequest(request.Body)
+		}()
+
+		if contentType != "application/json" {
+			writer.WriteHeader(http.StatusUnsupportedMediaType)
+			errorResp = storage.ErrorResponse{ErrorValue: "unsupported media type"}
+			return
+		}
+
+		mRequest, err := storage.ParseJSONRequest(request.Body)
 		if err != nil {
 			writer.WriteHeader(http.StatusBadRequest)
+			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
 			return
 		}
-		value, ok, err := repository.Get(m.ExportTypeName(), m.GetName())
+		value, ok, err := repository.Get(mRequest.MType, mRequest.ID)
 		if !ok || err != nil {
 			writer.WriteHeader(http.StatusNotFound)
+			errorResp = storage.ErrorResponse{ErrorValue: metricNotFountError}
 			return
 		}
-		resp, err := storage.ConvertTo(value)
+		metrics, err := storage.ConvertToSend(value)
 		if err != nil {
-			logger.Log.Debug("error converting response", zap.Error(err))
+			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
 			writer.WriteHeader(http.StatusInternalServerError)
 		}
-		writer.Header().Set("Content-Type", "application/json")
+		resp.Metrics = metrics
+		resp.ErrorResponse = nil
 		writer.WriteHeader(http.StatusOK)
-		enc := json.NewEncoder(writer)
-		if err = enc.Encode(resp); err != nil {
-			logger.Log.Debug("error encoding response", zap.Error(err))
-			return
-		}
 
 	}
 }
@@ -131,9 +145,14 @@ func getJSONUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc
 		var errorResp storage.ErrorResponse
 		resp := storage.MetricsResponse{ErrorResponse: &errorResp}
 		enc := json.NewEncoder(writer)
+		var statusCode = http.StatusOK
 
 		defer func() {
-			writer.WriteHeader(http.StatusBadRequest)
+			err := request.Body.Close()
+			logError(0, err)
+		}()
+		defer func() {
+			writer.WriteHeader(statusCode)
 			if err := enc.Encode(resp); err != nil {
 				logger.Log.Debug("error encoding response", zap.Error(err))
 				return
@@ -141,35 +160,35 @@ func getJSONUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc
 
 		}()
 		if contentType != "application/json" {
-			writer.WriteHeader(http.StatusUnsupportedMediaType)
-			errorResp = storage.ErrorResponse{ErrorValue: "unsuported media type"}
+			statusCode = http.StatusUnsupportedMediaType
+			errorResp = storage.ErrorResponse{ErrorValue: "unsupported media type"}
 			return
 		}
-		defer func() {
-			err := request.Body.Close()
-			logError(0, err)
-		}()
-
-		m, err := storage.ParseJSONRequest(request.Body)
+		mRequest, err := storage.ParseJSONRequest(request.Body)
 		if err != nil {
-			writer.WriteHeader(http.StatusBadRequest)
+			statusCode = http.StatusBadRequest
+			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
+			return
+		}
+		m, err := storage.ConvertFrom(mRequest.Metrics)
+		if err != nil {
+			statusCode = http.StatusBadRequest
 			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
 			return
 		}
 		m, err = repository.Collect(m)
 		if err != nil {
-			writer.WriteHeader(http.StatusInternalServerError)
+			statusCode = http.StatusInternalServerError
 			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
 			return
 		}
-		metrics, err := storage.ConvertTo(m)
+		metrics, err := storage.ConvertToSend(m)
 		if err != nil {
+			statusCode = http.StatusBadRequest
 			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
-			writer.WriteHeader(http.StatusInternalServerError)
 		}
 		resp.Metrics = metrics
 		resp.ErrorResponse = nil
-		writer.WriteHeader(http.StatusOK)
 
 	}
 }

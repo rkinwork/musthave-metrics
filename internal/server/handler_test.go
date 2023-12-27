@@ -1,14 +1,13 @@
 package server
 
 import (
-	"bytes"
-	"encoding/json"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -172,69 +171,146 @@ func TestUpdateHandler(t *testing.T) {
 func TestJSONUpdateHandler(t *testing.T) {
 	repo := storage.NewInMemMetricRepository()
 	ts := httptest.NewServer(NewMetricsRouter(repo))
-	var icnt int64 = 1
-	var fcnt float64 = 1
+	_, err := repo.Collect(storage.Counter{Name: "pollcount", Value: 1})
+	require.NoError(t, err)
 
 	defer ts.Close()
 	type want struct {
 		code int
-		resp storage.MetricsResponse
+		resp string
 	}
 	tests := []struct {
 		name    string
-		payload storage.MetricsRequest
+		payload string
 		want    want
 	}{
 		{
-			name: "positive flow counter",
-			payload: storage.MetricsRequest{
-				Metrics: storage.NewMetrics("testid", storage.CounterMetric, &icnt, nil),
-			},
+			name:    "positive flow counter",
+			payload: `{"id": "test", "type":"counter", "delta": 1}`,
 			want: want{
 				code: http.StatusOK,
-				resp: storage.MetricsResponse{
-					Metrics: storage.NewMetrics("testid", storage.CounterMetric, nil, &fcnt),
-				},
+				resp: `{"id": "test", "type":"counter", "delta": 1}`,
 			},
 		},
 		{
-			name: "positive flow gauge",
-			payload: storage.MetricsRequest{
-				Metrics: storage.NewMetrics("testid", storage.GaugeMetric, nil, &fcnt),
-			},
+			name:    "positive flow gauge",
+			payload: `{"id": "test", "type":"gauge", "value": 1}`,
 			want: want{
 				code: http.StatusOK,
-				resp: storage.MetricsResponse{
-					Metrics: storage.NewMetrics("testid", storage.GaugeMetric, nil, &fcnt),
-				},
+				resp: `{"id": "test", "type":"gauge", "value": 1}`,
 			},
 		},
 		{
-			name: "negative flow gauge",
-			payload: storage.MetricsRequest{
-				Metrics: storage.NewMetrics("testid", storage.GaugeMetric, &icnt, nil),
-			},
+			name:    "negative flow gauge",
+			payload: `{"id": "test", "type":"gauge", "delta": 1}`,
 			want: want{
 				code: http.StatusBadRequest,
-				resp: storage.MetricsResponse{
-					Metrics:       nil,
-					ErrorResponse: &storage.ErrorResponse{ErrorValue: badRequestError},
-				},
+				resp: `{"error":"mailformed request"}`,
+			},
+		},
+		{
+			name:    "negative flow counter float delta",
+			payload: `{"id": "test", "type":"counter", "delta": 1.23}`,
+			want: want{
+				code: http.StatusBadRequest,
+				resp: `{"error":"mailformed request"}`,
+			},
+		},
+		{
+			name:    "negative flow counter negative delta",
+			payload: `{"id": "test", "type":"counter", "delta": -1}`,
+			want: want{
+				code: http.StatusBadRequest,
+				resp: `{"error":"mailformed request"}`,
+			},
+		},
+		{
+			name:    "positive poll counter increment",
+			payload: `{"id": "pollcount", "type":"counter", "delta": 1}`,
+			want: want{
+				code: http.StatusOK,
+				resp: `{"id": "pollcount", "type":"counter", "delta": 2}`,
+			},
+		},
+		{
+			name:    "empty payload",
+			payload: ``,
+			want: want{
+				code: http.StatusBadRequest,
+				resp: `{"error":"mailformed request"}`,
 			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			w := bytes.NewBuffer(make([]byte, 0))
-			enc := json.NewEncoder(w)
-			enc.Encode(tc.payload)
+			w := strings.NewReader(tc.payload)
 			statusCode, bd := testRequest(t, ts, "POST", "/update/", http.Header{
 				"Content-Type": {"application/json"},
 			}, w)
-			w.Reset()
-			enc.Encode(tc.want.resp)
 			assert.Equal(t, tc.want.code, statusCode)
-			assert.JSONEq(t, w.String(), bd)
+			assert.JSONEq(t, tc.want.resp, bd)
+		})
+	}
+}
+
+func TestJSONValueHandler(t *testing.T) {
+	repo := storage.NewInMemMetricRepository()
+	_, err := repo.Collect(storage.Counter{Name: "test", Value: 1})
+	require.NoError(t, err)
+	_, err = repo.Collect(storage.Gauge{Name: "test", Value: 1})
+	require.NoError(t, err)
+	ts := httptest.NewServer(NewMetricsRouter(repo))
+	defer ts.Close()
+	type want struct {
+		code int
+		resp string
+	}
+	tests := []struct {
+		name    string
+		payload string
+		want    want
+	}{
+		{
+			name:    "positive flow counter",
+			payload: `{"id": "test", "type":"counter"}`,
+			want: want{
+				code: http.StatusOK,
+				resp: `{"id": "test", "type":"counter", "delta": 1}`,
+			},
+		},
+		{
+			name:    "positive flow gauge",
+			payload: `{"id": "test", "type":"gauge"}`,
+			want: want{
+				code: http.StatusOK,
+				resp: `{"id": "test", "type":"gauge", "value": 1}`,
+			},
+		},
+		{
+			name:    "unknown type",
+			payload: `{"id": "test", "type":"badtype"}`,
+			want: want{
+				code: http.StatusNotFound,
+				resp: `{"error":"metric not found"}`,
+			},
+		},
+		{
+			name:    "absent id",
+			payload: `{"id": "unknown", "type":"counter"}`,
+			want: want{
+				code: http.StatusNotFound,
+				resp: `{"error":"metric not found"}`,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			w := strings.NewReader(tc.payload)
+			statusCode, bd := testRequest(t, ts, "POST", "/value/", http.Header{
+				"Content-Type": {"application/json"},
+			}, w)
+			assert.Equal(t, tc.want.code, statusCode)
+			assert.JSONEq(t, tc.want.resp, bd)
 		})
 	}
 }
