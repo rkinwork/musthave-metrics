@@ -54,7 +54,7 @@ func getMemMetrics() map[string]storage.Metric {
 func CollectMemMetrics(repository *storage.MetricRepository) {
 	mm := getMemMetrics()
 	for _, metric := range mm {
-		if err := repository.Collect(metric); err != nil {
+		if _, err := repository.Collect(metric); err != nil {
 			log.Printf("Problems with saving metric %v", metric)
 		}
 	}
@@ -66,8 +66,13 @@ type MetricSender struct {
 }
 
 func (s *MetricSender) SendMetric(metric storage.Metric) error {
-	endPoint := fmt.Sprintf(`%s/update/%s/%s/%s`, s.ServerAddress, metric.ExportTypeName(), metric.GetName(), metric.ExportValue())
-	_, err := s.R().SetHeader("Content-Type", "text/plain").Post(endPoint)
+	endPoint := fmt.Sprintf(`%s/update/`, s.ServerAddress)
+	s.R().SetHeader("Content-Type", "application/json")
+	metrics, err := storage.ConvertTo(metric)
+	if err != nil {
+		return err
+	}
+	_, err = s.R().SetBody(metrics).Post(endPoint)
 	return err
 }
 

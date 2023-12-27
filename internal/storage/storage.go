@@ -106,20 +106,21 @@ func (m *MetricRepository) GetStorage(metric Metric) (MetricStorage, error) {
 	return storage, nil
 }
 
-func (m *MetricRepository) Collect(metric Metric) error {
+func (m *MetricRepository) Collect(metric Metric) (Metric, error) {
 	storage, err := m.GetStorage(metric)
 	if err != nil {
-		return err
+		return metric, err
 	}
 
 	switch v := metric.(type) {
 	case Counter:
 		if oldMetric, ok := storage.Get(metric.GetName()); ok {
 			v.Value += oldMetric.(Counter).Value
-			return storage.Set(v)
+
+			return v, storage.Set(v)
 		}
 	}
-	return storage.Set(metric)
+	return metric, storage.Set(metric)
 }
 
 func (m *MetricRepository) Delete(metric Metric) error {

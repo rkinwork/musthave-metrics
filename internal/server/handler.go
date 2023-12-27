@@ -1,13 +1,20 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
 	"github.com/rkinwork/musthave-metrics/internal/logger"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
+	"go.uber.org/zap"
 	"html/template"
 	"log"
 	"net/http"
+)
+
+const (
+	badRequestError         = "mailformed request"
+	problemsWithServerError = "problems with server error"
 )
 
 var indexTemplate = template.Must(template.New("index").Parse(GenerateHTML()))
@@ -17,9 +24,11 @@ func NewMetricsRouter(repository *storage.MetricRepository) chi.Router {
 	router.Use(logger.WithLogging)
 	router.Get("/", getMainHandler(repository))
 	router.Route("/update", func(router chi.Router) {
+		router.Post("/", getJSONUpdateHandler(repository))
 		router.Post("/{metricType}/{name}/{value}", getUpdateHandler(repository))
 	})
 	router.Route("/value", func(router chi.Router) {
+		router.Post("/", getJSONValueHandler(repository))
 		router.Get("/{metricType}/{name}", getValueHandler(repository))
 	})
 	return router
@@ -41,12 +50,12 @@ func getMainHandler(repository *storage.MetricRepository) http.HandlerFunc {
 func getValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		metricType, name := chi.URLParam(request, "metricType"), chi.URLParam(request, "name")
-		_, err := storage.ParseMetric(metricType, name, "0")
+		m, err := storage.ParseMetric(metricType, name, "0")
 		if err != nil {
 			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
-		value, ok, err := repository.Get(metricType, name)
+		value, ok, err := repository.Get(m.ExportTypeName(), m.GetName())
 		if !ok || err != nil {
 			writer.WriteHeader(http.StatusNotFound)
 			return
@@ -54,6 +63,44 @@ func getValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
 		writer.Header().Set("Content-Type", "text/plain")
 		writer.WriteHeader(http.StatusOK)
 		logError(fmt.Fprintf(writer, "%s", value.ExportValue()))
+	}
+}
+
+func getJSONValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		contentType := request.Header.Get("Content-type")
+		if contentType != "application/json" {
+			writer.WriteHeader(http.StatusUnsupportedMediaType)
+			return
+		}
+		defer func() {
+			err := request.Body.Close()
+			logError(0, err)
+		}()
+
+		m, err := storage.ParseJSONRequest(request.Body)
+		if err != nil {
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		value, ok, err := repository.Get(m.ExportTypeName(), m.GetName())
+		if !ok || err != nil {
+			writer.WriteHeader(http.StatusNotFound)
+			return
+		}
+		resp, err := storage.ConvertTo(value)
+		if err != nil {
+			logger.Log.Debug("error converting response", zap.Error(err))
+			writer.WriteHeader(http.StatusInternalServerError)
+		}
+		writer.Header().Set("Content-Type", "application/json")
+		writer.WriteHeader(http.StatusOK)
+		enc := json.NewEncoder(writer)
+		if err = enc.Encode(resp); err != nil {
+			logger.Log.Debug("error encoding response", zap.Error(err))
+			return
+		}
+
 	}
 }
 
@@ -69,11 +116,61 @@ func getUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc {
 			writer.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if repository.Collect(metric) == nil {
+		if _, err = repository.Collect(metric); err == nil {
 			writer.WriteHeader(http.StatusOK)
 			return
 		}
 		writer.WriteHeader(http.StatusBadRequest)
+	}
+}
+
+func getJSONUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		contentType := request.Header.Get("Content-type")
+		writer.Header().Set("Content-Type", "application/json")
+		var errorResp storage.ErrorResponse
+		resp := storage.MetricsResponse{ErrorResponse: &errorResp}
+		enc := json.NewEncoder(writer)
+
+		defer func() {
+			writer.WriteHeader(http.StatusBadRequest)
+			if err := enc.Encode(resp); err != nil {
+				logger.Log.Debug("error encoding response", zap.Error(err))
+				return
+			}
+
+		}()
+		if contentType != "application/json" {
+			writer.WriteHeader(http.StatusUnsupportedMediaType)
+			errorResp = storage.ErrorResponse{ErrorValue: "unsuported media type"}
+			return
+		}
+		defer func() {
+			err := request.Body.Close()
+			logError(0, err)
+		}()
+
+		m, err := storage.ParseJSONRequest(request.Body)
+		if err != nil {
+			writer.WriteHeader(http.StatusBadRequest)
+			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
+			return
+		}
+		m, err = repository.Collect(m)
+		if err != nil {
+			writer.WriteHeader(http.StatusInternalServerError)
+			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
+			return
+		}
+		metrics, err := storage.ConvertTo(m)
+		if err != nil {
+			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
+			writer.WriteHeader(http.StatusInternalServerError)
+		}
+		resp.Metrics = metrics
+		resp.ErrorResponse = nil
+		writer.WriteHeader(http.StatusOK)
+
 	}
 }
 
