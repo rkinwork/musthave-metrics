@@ -1,44 +1,97 @@
 package storage
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"regexp"
 	"strconv"
 )
 
-const metricValueMaxLength = 20
+type MetricsRequest struct {
+	*Metrics
+}
+
+type MetricsResponse struct {
+	*Metrics
+	*ErrorResponse
+}
+
+type ErrorResponse struct {
+	ErrorValue string `json:"error"`
+}
 
 var validNamePattern = regexp.MustCompile(`^[a-zA-Z]\w{0,127}$`)
-var validGaugePattern = regexp.MustCompile(`^-?\d+(\.\d+)*$`)
-var validCounterPattern = regexp.MustCompile(`^\d+$`)
 
 func ParseMetric(valType, name, val string) (Metric, error) {
-	var err error
-	if !validNamePattern.MatchString(name) {
+	var delta *int64
+	var value *float64
+	if s, err := strconv.ParseFloat(val, 64); err == nil {
+		value = &s
+	}
+	if s, err := strconv.ParseInt(val, 10, 64); err == nil {
+		delta = &s
+	}
+
+	m := NewMetrics(name, valType, delta, value)
+	return ConvertFrom(m)
+
+}
+
+func ConvertFrom(m *Metrics) (Metric, error) {
+	if !validNamePattern.MatchString(m.ID) {
 		return nil, errors.New("not valid metric Name")
 	}
-	if len(val) > metricValueMaxLength {
-		return nil, errors.New("not valid metric Value")
-	}
-	switch valType {
+	switch m.MType {
 	case GaugeMetric:
-		if !validGaugePattern.MatchString(val) {
-			err = errors.New("not valid metric Value")
+		if m.Value == nil {
+			return nil, errors.New("not valid metric Value")
 		}
-		if s, err := strconv.ParseFloat(val, 64); err == nil {
-			return Gauge{Name: name, Value: s}, nil
-		}
-
+		return Gauge{Name: m.ID, Value: *m.Value}, nil
 	case CounterMetric:
-		if !validCounterPattern.MatchString(val) {
-			err = errors.New("not valid metric Value")
+		if m.Delta == nil {
+			return nil, errors.New("not valid metric Value")
 		}
-		if s, err := strconv.ParseInt(val, 10, 64); err == nil {
-			return Counter{Name: name, Value: s}, nil
+		if *m.Delta < 0 {
+			return nil, errors.New("delta could be only positive")
 		}
+		return Counter{Name: m.ID, Value: *m.Delta}, nil
 	default:
-		err = errors.New("not valid metric type")
+		return nil, errors.New("not valid metric type")
+	}
+}
+
+func ConvertTo(m Metric) (*Metrics, error) {
+	var value *float64
+	switch metric := m.(type) {
+	case Gauge:
+		value = &metric.Value
+	case Counter:
+		v := float64(metric.Value)
+		value = &v
+	default:
+		return nil, errors.New("unknown metric type")
+	}
+	return NewMetrics(m.GetName(), m.ExportTypeName(), nil, value), nil
+}
+
+func ConvertToSend(m Metric) (*Metrics, error) {
+	switch metric := m.(type) {
+	case Gauge:
+		return NewMetrics(m.GetName(), m.ExportTypeName(), nil, &metric.Value), nil
+	case Counter:
+		return NewMetrics(m.GetName(), m.ExportTypeName(), &metric.Value, nil), nil
+	default:
+		return nil, errors.New("unknown metric type")
 	}
 
-	return nil, err
+}
+
+func ParseJSONRequest(reader io.Reader) (*MetricsRequest, error) {
+	var m MetricsRequest
+	err := json.NewDecoder(reader).Decode(&m)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
