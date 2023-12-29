@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
+	"github.com/rkinwork/musthave-metrics/internal/gzipper"
 	"github.com/rkinwork/musthave-metrics/internal/logger"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"go.uber.org/zap"
@@ -23,6 +25,8 @@ var indexTemplate = template.Must(template.New("index").Parse(GenerateHTML()))
 func NewMetricsRouter(repository *storage.MetricRepository) chi.Router {
 	router := chi.NewRouter()
 	router.Use(logger.WithLogging)
+	router.Use(middleware.Compress(5))
+	router.Use(gzipper.CompressedBodyReaderMiddleware)
 	router.Get("/", getMainHandler(repository))
 	router.Route("/update", func(router chi.Router) {
 		router.Post("/", getJSONUpdateHandler(repository))
@@ -38,6 +42,7 @@ func NewMetricsRouter(repository *storage.MetricRepository) chi.Router {
 func getMainHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		metrics := repository.GetAllMetrics()
+		writer.Header().Set("Content-Type", "text/html")
 		writer.WriteHeader(http.StatusOK)
 		if len(metrics) > 0 {
 			err := indexTemplate.Execute(writer, metrics)
@@ -72,6 +77,7 @@ func getJSONValueHandler(repository *storage.MetricRepository) http.HandlerFunc 
 		contentType := request.Header.Get("Content-type")
 		writer.Header().Set("Content-Type", "application/json")
 		var errorResp storage.ErrorResponse
+		var statusCode = http.StatusOK
 		resp := storage.MetricsResponse{ErrorResponse: &errorResp}
 		enc := json.NewEncoder(writer)
 
@@ -80,7 +86,7 @@ func getJSONValueHandler(repository *storage.MetricRepository) http.HandlerFunc 
 			logError(0, err)
 		}()
 		defer func() {
-			writer.WriteHeader(http.StatusBadRequest)
+			writer.WriteHeader(statusCode)
 			if err := enc.Encode(resp); err != nil {
 				logger.Log.Debug("error encoding response", zap.Error(err))
 				return
@@ -89,31 +95,31 @@ func getJSONValueHandler(repository *storage.MetricRepository) http.HandlerFunc 
 		}()
 
 		if contentType != "application/json" {
-			writer.WriteHeader(http.StatusUnsupportedMediaType)
+			statusCode = http.StatusUnsupportedMediaType
 			errorResp = storage.ErrorResponse{ErrorValue: "unsupported media type"}
 			return
 		}
 
 		mRequest, err := storage.ParseJSONRequest(request.Body)
 		if err != nil {
-			writer.WriteHeader(http.StatusBadRequest)
+			statusCode = http.StatusBadRequest
 			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
 			return
 		}
 		value, ok, err := repository.Get(mRequest.MType, mRequest.ID)
 		if !ok || err != nil {
-			writer.WriteHeader(http.StatusNotFound)
+			statusCode = http.StatusNotFound
 			errorResp = storage.ErrorResponse{ErrorValue: metricNotFountError}
 			return
 		}
 		metrics, err := storage.ConvertToSend(value)
 		if err != nil {
+			statusCode = http.StatusInternalServerError
 			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
-			writer.WriteHeader(http.StatusInternalServerError)
+
 		}
 		resp.Metrics = metrics
 		resp.ErrorResponse = nil
-		writer.WriteHeader(http.StatusOK)
 
 	}
 }

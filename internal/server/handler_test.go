@@ -1,6 +1,8 @@
 package server
 
 import (
+	"bytes"
+	"compress/gzip"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,7 +14,7 @@ import (
 )
 
 func testRequest(t *testing.T, ts *httptest.Server, method,
-	path string, header http.Header, body io.Reader) (int, string) {
+	path string, header http.Header, body io.Reader) (int, string, http.Header) {
 	req, err := http.NewRequest(method, ts.URL+path, body)
 	require.NoError(t, err)
 	req.Header = header
@@ -24,7 +26,7 @@ func testRequest(t *testing.T, ts *httptest.Server, method,
 	defer resp.Body.Close()
 	require.NoError(t, err)
 
-	return resp.StatusCode, string(respBody)
+	return resp.StatusCode, string(respBody), resp.Header
 }
 
 func TestValueHandler(t *testing.T) {
@@ -69,7 +71,7 @@ func TestValueHandler(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			statusCode, responseText := testRequest(t, ts, "GET", tc.endpoint, http.Header{}, nil)
+			statusCode, responseText, _ := testRequest(t, ts, "GET", tc.endpoint, http.Header{}, nil)
 			assert.Equal(t, tc.want.code, statusCode)
 			assert.Equal(t, tc.want.responseText, responseText)
 
@@ -162,7 +164,7 @@ func TestUpdateHandler(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			statusCode, _ := testRequest(t, ts, "POST", tc.endpoint, http.Header{}, nil)
+			statusCode, _, _ := testRequest(t, ts, "POST", tc.endpoint, http.Header{}, nil)
 			assert.Equal(t, tc.want.code, statusCode)
 		})
 	}
@@ -244,7 +246,7 @@ func TestJSONUpdateHandler(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := strings.NewReader(tc.payload)
-			statusCode, bd := testRequest(t, ts, "POST", "/update/", http.Header{
+			statusCode, bd, _ := testRequest(t, ts, "POST", "/update/", http.Header{
 				"Content-Type": {"application/json"},
 			}, w)
 			assert.Equal(t, tc.want.code, statusCode)
@@ -306,11 +308,144 @@ func TestJSONValueHandler(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			w := strings.NewReader(tc.payload)
-			statusCode, bd := testRequest(t, ts, "POST", "/value/", http.Header{
+			statusCode, bd, _ := testRequest(t, ts, "POST", "/value/", http.Header{
 				"Content-Type": {"application/json"},
 			}, w)
 			assert.Equal(t, tc.want.code, statusCode)
 			assert.JSONEq(t, tc.want.resp, bd)
+		})
+	}
+}
+
+func TestJSONGzipHandling(t *testing.T) {
+	repo := storage.NewInMemMetricRepository()
+	baseValue := storage.Counter{Name: "test", Value: 1}
+
+	ts := httptest.NewServer(NewMetricsRouter(repo))
+	defer ts.Close()
+	type want struct {
+		code int
+		resp string
+	}
+	tests := []struct {
+		name    string
+		payload string
+		path    string
+		header  http.Header
+		want    want
+	}{
+		{
+			name:    "value gzipped request  gzipped response",
+			payload: `{"id": "test", "type":"counter"}`,
+			path:    "/value/",
+			header: http.Header{
+				"Content-Type":     {"application/json"},
+				"Content-Encoding": {"gzip"},
+			},
+			want: want{
+				code: http.StatusOK,
+				resp: `{"id": "test", "type":"counter", "delta": 1}`,
+			},
+		},
+		{
+			name:    "value gzipped request  plain response",
+			payload: `{"id": "test", "type":"counter"}`,
+			path:    "/value/",
+			header: http.Header{
+				"Content-Type":     {"application/json"},
+				"Content-Encoding": {"gzip"},
+			},
+			want: want{
+				code: http.StatusOK,
+				resp: `{"id": "test", "type":"counter", "delta": 1}`,
+			},
+		},
+		{
+			name:    "value plain request  gzipped response",
+			payload: `{"id": "test", "type":"counter"}`,
+			path:    "/value/",
+			header: http.Header{
+				"Content-Type":    {"application/json"},
+				"Accept-Encoding": {"gzip"},
+			},
+			want: want{
+				code: http.StatusOK,
+				resp: `{"id": "test", "type":"counter", "delta": 1}`,
+			},
+		},
+		{
+			name:    "update gzipped request  gzipped response",
+			payload: `{"id": "test", "type":"counter", "delta": 1}`,
+			path:    "/update/",
+			header: http.Header{
+				"Content-Type":     {"application/json"},
+				"Content-Encoding": {"gzip"},
+			},
+			want: want{
+				code: http.StatusOK,
+				resp: `{"id": "test", "type":"counter", "delta": 2}`,
+			},
+		},
+		{
+			name:    "update gzipped request  plain response",
+			payload: `{"id": "test", "type":"counter", "delta": 1}`,
+			path:    "/update/",
+			header: http.Header{
+				"Content-Type":     {"application/json"},
+				"Content-Encoding": {"gzip"},
+			},
+			want: want{
+				code: http.StatusOK,
+				resp: `{"id": "test", "type":"counter", "delta": 2}`,
+			},
+		},
+		{
+			name:    "value plain request  gzipped response",
+			payload: `{"id": "test", "type":"counter", "delta": 1}`,
+			path:    "/update/",
+			header: http.Header{
+				"Content-Type":    {"application/json"},
+				"Accept-Encoding": {"gzip"},
+			},
+			want: want{
+				code: http.StatusOK,
+				resp: `{"id": "test", "type":"counter", "delta": 2}`,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := repo.Collect(baseValue)
+			require.NoError(t, err)
+			payload := bytes.NewBuffer([]byte{})
+			payload.WriteString(tc.payload)
+			if enc := tc.header.Get("Content-Encoding"); enc == "gzip" {
+				bdy := bytes.NewBuffer([]byte{})
+				z := gzip.NewWriter(bdy)
+				_, err = z.Write(payload.Bytes())
+				require.NoError(t, err)
+				err = z.Flush()
+				require.NoError(t, err)
+				err = z.Close()
+				require.NoError(t, err)
+				payload = bdy
+			}
+
+			statusCode, body, header := testRequest(t, ts, "POST", tc.path, tc.header, payload)
+
+			if enc := header.Get("Content-Encoding"); enc == "gzip" {
+				rdr, err := gzip.NewReader(strings.NewReader(body))
+				require.NoError(t, err)
+				defer rdr.Close()
+				respBody, err := io.ReadAll(rdr)
+				require.NoError(t, err)
+				body = string(respBody)
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want.code, statusCode)
+			assert.JSONEq(t, tc.want.resp, body)
+			err = repo.Delete(baseValue)
+			require.NoError(t, err)
 		})
 	}
 }

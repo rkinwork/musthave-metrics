@@ -1,6 +1,9 @@
 package agent
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"github.com/go-resty/resty/v2"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
@@ -66,14 +69,32 @@ type MetricSender struct {
 }
 
 func (s *MetricSender) SendMetric(metric storage.Metric) error {
-	endPoint := fmt.Sprintf(`%s/update/`, s.ServerAddress)
-	s.R().SetHeader("Content-Type", "application/json")
+	updateEndpoint := fmt.Sprintf(`%s/update/`, s.ServerAddress)
+
 	metrics, err := storage.ConvertToSend(metric)
 	if err != nil {
 		return err
 	}
+
 	bd := storage.MetricsRequest{Metrics: metrics}
-	_, err = s.R().SetBody(bd).Post(endPoint)
+	jsonBody, err := json.Marshal(bd)
+	if err != nil {
+		return err
+	}
+	var gzipBuffer bytes.Buffer
+	gzipWriter := gzip.NewWriter(&gzipBuffer)
+	if _, err = gzipWriter.Write(jsonBody); err != nil {
+		return err
+	}
+	if err = gzipWriter.Close(); err != nil {
+		return err
+	}
+	_, err = s.R().
+		SetHeader("Content-Type", "application/json").
+		SetHeader("Content-Encoding", "gzip").
+		SetBody(gzipBuffer.Bytes()).
+		Post(updateEndpoint)
+
 	return err
 }
 
