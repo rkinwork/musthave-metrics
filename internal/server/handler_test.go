@@ -31,7 +31,14 @@ func testRequest(t *testing.T, ts *httptest.Server, method,
 
 func TestValueHandler(t *testing.T) {
 	repo := storage.NewInMemMetricRepository()
-	_, err := repo.Collect(storage.Counter{Name: "clicks", Value: 5})
+
+	delta := int64(5)
+	_, err := repo.Collect(storage.Metrics{
+		ID:    "clicks",
+		MType: storage.CounterMetric,
+		Delta: &delta,
+		Value: nil,
+	})
 	require.NoError(t, err)
 	ts := httptest.NewServer(NewMetricsRouter(repo))
 	defer ts.Close()
@@ -173,7 +180,13 @@ func TestUpdateHandler(t *testing.T) {
 func TestJSONUpdateHandler(t *testing.T) {
 	repo := storage.NewInMemMetricRepository()
 	ts := httptest.NewServer(NewMetricsRouter(repo))
-	_, err := repo.Collect(storage.Counter{Name: "pollcount", Value: 1})
+	delta := int64(1)
+	_, err := repo.Collect(storage.Metrics{
+		ID:    "pollcount",
+		MType: storage.CounterMetric,
+		Delta: &delta,
+		Value: nil,
+	})
 	require.NoError(t, err)
 
 	defer ts.Close()
@@ -257,9 +270,21 @@ func TestJSONUpdateHandler(t *testing.T) {
 
 func TestJSONValueHandler(t *testing.T) {
 	repo := storage.NewInMemMetricRepository()
-	_, err := repo.Collect(storage.Counter{Name: "test", Value: 1})
+	delta := int64(1)
+	value := float64(1)
+	_, err := repo.Collect(storage.Metrics{
+		ID:    "test",
+		MType: storage.CounterMetric,
+		Delta: &delta,
+		Value: nil,
+	})
 	require.NoError(t, err)
-	_, err = repo.Collect(storage.Gauge{Name: "test", Value: 1})
+	_, err = repo.Collect(storage.Metrics{
+		ID:    "test",
+		MType: storage.GaugeMetric,
+		Delta: nil,
+		Value: &value,
+	})
 	require.NoError(t, err)
 	ts := httptest.NewServer(NewMetricsRouter(repo))
 	defer ts.Close()
@@ -319,8 +344,13 @@ func TestJSONValueHandler(t *testing.T) {
 
 func TestJSONGzipHandling(t *testing.T) {
 	repo := storage.NewInMemMetricRepository()
-	baseValue := storage.Counter{Name: "test", Value: 1}
-
+	delta := int64(1)
+	baseValue := storage.Metrics{
+		ID:    "test",
+		MType: storage.CounterMetric,
+		Delta: &delta,
+		Value: nil,
+	}
 	ts := httptest.NewServer(NewMetricsRouter(repo))
 	defer ts.Close()
 	type want struct {

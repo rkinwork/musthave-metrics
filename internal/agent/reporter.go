@@ -16,47 +16,237 @@ import (
 const PollCount = `PollCount`
 const retries = 3
 
-func getMemMetrics() map[string]storage.Metric {
-	m := &runtime.MemStats{}
-	runtime.ReadMemStats(m)
-	// use map to find out duplicates in metrics
-	return map[string]storage.Metric{
-		PollCount:       storage.Counter{Name: PollCount, Value: 1},
-		`RandomValue`:   storage.Gauge{Name: `RandomValue`, Value: rand.Float64()},
-		`Alloc`:         storage.Gauge{Name: `Alloc`, Value: float64(m.Alloc)},
-		`BuckHashSys`:   storage.Gauge{Name: `BuckHashSys`, Value: float64(m.BuckHashSys)},
-		`Frees`:         storage.Gauge{Name: `Frees`, Value: float64(m.Frees)},
-		`GCCPUFraction`: storage.Gauge{Name: `GCCPUFraction`, Value: m.GCCPUFraction},
-		`GCSys`:         storage.Gauge{Name: `GCSys`, Value: float64(m.GCSys)},
-		`HeapAlloc`:     storage.Gauge{Name: `HeapAlloc`, Value: float64(m.HeapAlloc)},
-		`HeapIdle`:      storage.Gauge{Name: `HeapIdle`, Value: float64(m.HeapIdle)},
-		`HeapInuse`:     storage.Gauge{Name: `HeapInuse`, Value: float64(m.HeapInuse)},
-		`HeapObjects`:   storage.Gauge{Name: `HeapObjects`, Value: float64(m.HeapObjects)},
-		`HeapReleased`:  storage.Gauge{Name: `HeapReleased`, Value: float64(m.HeapReleased)},
-		`HeapSys`:       storage.Gauge{Name: `HeapSys`, Value: float64(m.HeapSys)},
-		`LastGC`:        storage.Gauge{Name: `LastGC`, Value: float64(m.LastGC)},
-		`Lookups`:       storage.Gauge{Name: `Lookups`, Value: float64(m.Lookups)},
-		`MCacheInuse`:   storage.Gauge{Name: `MCacheInuse`, Value: float64(m.MCacheInuse)},
-		`MCacheSys`:     storage.Gauge{Name: `MCacheSys`, Value: float64(m.MCacheSys)},
-		`MSpanInuse`:    storage.Gauge{Name: `MSpanInuse`, Value: float64(m.MSpanInuse)},
-		`MSpanSys`:      storage.Gauge{Name: `MSpanSys`, Value: float64(m.MSpanSys)},
-		`Mallocs`:       storage.Gauge{Name: `Mallocs`, Value: float64(m.Mallocs)},
-		`NextGC`:        storage.Gauge{Name: `NextGC`, Value: float64(m.NextGC)},
-		`NumForcedGC`:   storage.Gauge{Name: `NumForcedGC`, Value: float64(m.NumForcedGC)},
-		`NumGC`:         storage.Gauge{Name: `NumGC`, Value: float64(m.NumGC)},
-		`OtherSys`:      storage.Gauge{Name: `OtherSys`, Value: float64(m.OtherSys)},
-		`PauseTotalNs`:  storage.Gauge{Name: `PauseTotalNs`, Value: float64(m.PauseTotalNs)},
-		`StackInuse`:    storage.Gauge{Name: `StackInuse`, Value: float64(m.StackInuse)},
-		`StackSys`:      storage.Gauge{Name: `StackSys`, Value: float64(m.StackSys)},
-		`Sys`:           storage.Gauge{Name: `Sys`, Value: float64(m.Sys)},
-		`TotalAlloc`:    storage.Gauge{Name: `TotalAlloc`, Value: float64(m.TotalAlloc)},
+type MemExtractor struct {
+	ID          string
+	MType       string
+	ExtractorFn func(*runtime.MemStats) string
+}
+
+var presets = map[string]MemExtractor{
+	PollCount: {
+		ID:    PollCount,
+		MType: storage.CounterMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return "1"
+		},
+	},
+	`RandomValue`: {
+		ID:    `RandomValue`,
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf(`%f`, rand.Float64())
+		},
+	},
+	`Alloc`: {
+		ID:    `Alloc`,
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf(`%d`, stats.Alloc)
+		},
+	},
+	"BuckHashSys": {
+		ID:    "BuckHashSys",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.BuckHashSys)
+		},
+	},
+	"Frees": {
+		ID:    "Frees",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.Frees)
+		},
+	},
+	"GCCPUFraction": {
+		ID:    "GCCPUFraction",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%f", stats.GCCPUFraction)
+		},
+	},
+	"GCSys": {
+		ID:    "GCSys",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.GCSys)
+		},
+	},
+	"HeapAlloc": {
+		ID:    "HeapAlloc",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.HeapAlloc)
+		},
+	},
+	"HeapIdle": {
+		ID:    "HeapIdle",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.HeapIdle)
+		},
+	},
+	"HeapInuse": {
+		ID:    "HeapInuse",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.HeapInuse)
+		},
+	},
+	"HeapObjects": {
+		ID:    "HeapObjects",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.HeapObjects)
+		},
+	},
+	"HeapReleased": {
+		ID:    "HeapReleased",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.HeapReleased)
+		},
+	},
+	"HeapSys": {
+		ID:    "HeapSys",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.HeapSys)
+		},
+	},
+	"LastGC": {
+		ID:    "LastGC",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.LastGC)
+		},
+	},
+	"Lookups": {
+		ID:    "Lookups",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.Lookups)
+		},
+	},
+	"MCacheInuse": {
+		ID:    "MCacheInuse",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.MCacheInuse)
+		},
+	},
+	"MCacheSys": {
+		ID:    "MCacheSys",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.MCacheSys)
+		},
+	},
+	"MSpanInuse": {
+		ID:    "MSpanInuse",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.MSpanInuse)
+		},
+	},
+	"MSpanSys": {
+		ID:    "MSpanSys",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.MSpanSys)
+		},
+	},
+	"Mallocs": {
+		ID:    "Mallocs",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.Mallocs)
+		},
+	},
+	"NextGC": {
+		ID:    "NextGC",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.NextGC)
+		},
+	},
+	"NumForcedGC": {
+		ID:    "NumForcedGC",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.NumForcedGC)
+		},
+	},
+	"NumGC": {
+		ID:    "NumGC",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.NumGC)
+		},
+	},
+	"OtherSys": {
+		ID:    "OtherSys",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.OtherSys)
+		},
+	},
+	"PauseTotalNs": {
+		ID:    "PauseTotalNs",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.PauseTotalNs)
+		},
+	},
+	"StackInuse": {
+		ID:    "StackInuse",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.StackInuse)
+		},
+	},
+	"StackSys": {
+		ID:    "StackSys",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.StackSys)
+		},
+	},
+	"Sys": {
+		ID:    "Sys",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.Sys)
+		},
+	},
+	"TotalAlloc": {
+		ID:    "TotalAlloc",
+		MType: storage.GaugeMetric,
+		ExtractorFn: func(stats *runtime.MemStats) string {
+			return fmt.Sprintf("%d", stats.TotalAlloc)
+		},
+	},
+}
+
+func getMemMetrics() []storage.Metrics {
+	ms := &runtime.MemStats{}
+	runtime.ReadMemStats(ms)
+	res := make([]storage.Metrics, 0, len(presets))
+	for _, preset := range presets {
+		m, err := storage.ParseMetric(preset.MType, preset.ID, preset.ExtractorFn(ms))
+		if err != nil {
+			continue
+		}
+		if err = storage.ValidateMetric(m); err == nil {
+			res = append(res, *m)
+		}
 	}
+	return res
 }
 
 // CollectMemMetrics Every invocation adds metrics to the storage of metrics
 func CollectMemMetrics(repository *storage.MetricRepository) {
-	mm := getMemMetrics()
-	for _, metric := range mm {
+	for _, metric := range getMemMetrics() {
 		if _, err := repository.Collect(metric); err != nil {
 			log.Printf("Problems with saving metric %v", metric)
 		}
@@ -68,15 +258,10 @@ type MetricSender struct {
 	*resty.Client
 }
 
-func (s *MetricSender) SendMetric(metric storage.Metric) error {
+func (s *MetricSender) SendMetric(metric storage.Metrics) error {
 	updateEndpoint := fmt.Sprintf(`%s/update/`, s.ServerAddress)
 
-	metrics, err := storage.ConvertToSend(metric)
-	if err != nil {
-		return err
-	}
-
-	bd := storage.MetricsRequest{Metrics: metrics}
+	bd := storage.MetricsRequest{Metrics: &metric}
 	jsonBody, err := json.Marshal(bd)
 	if err != nil {
 		return err
@@ -130,6 +315,6 @@ func SendMetrics(repository *storage.MetricRepository, sender *MetricSender) {
 	}
 }
 
-func logError(metric storage.Metric, err error) {
+func logError(metric storage.Metrics, err error) {
 	log.Printf("Problems with sending: %v, %v", metric, err)
 }

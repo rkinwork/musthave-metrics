@@ -55,20 +55,27 @@ func getMainHandler(repository *storage.MetricRepository) http.HandlerFunc {
 
 func getValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
-		metricType, name := chi.URLParam(request, "metricType"), chi.URLParam(request, "name")
-		m, err := storage.ParseMetric(metricType, name, "0")
+		metricType, name, value := chi.URLParam(request, "metricType"), chi.URLParam(request, "name"), chi.URLParam(request, "value")
+		m, err := storage.ParseMetric(metricType, name, value)
 		if err != nil {
 			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
-		value, ok, err := repository.Get(m.ExportTypeName(), m.GetName())
-		if !ok || err != nil {
+		metric, ok := repository.Get(*m)
+		if !ok {
 			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
 		writer.Header().Set("Content-Type", "text/plain")
 		writer.WriteHeader(http.StatusOK)
-		logError(fmt.Fprintf(writer, "%s", value.ExportValue()))
+		switch m.MType {
+		case storage.CounterMetric:
+			logError(fmt.Fprintf(writer, "%d", *metric.Delta))
+			return
+		case storage.GaugeMetric:
+			logError(fmt.Fprintf(writer, "%g", *metric.Value))
+		}
+
 	}
 }
 
@@ -106,19 +113,13 @@ func getJSONValueHandler(repository *storage.MetricRepository) http.HandlerFunc 
 			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
 			return
 		}
-		value, ok, err := repository.Get(mRequest.MType, mRequest.ID)
-		if !ok || err != nil {
+		metrics, ok := repository.Get(*mRequest.Metrics)
+		if !ok {
 			statusCode = http.StatusNotFound
 			errorResp = storage.ErrorResponse{ErrorValue: metricNotFountError}
 			return
 		}
-		metrics, err := storage.ConvertToSend(value)
-		if err != nil {
-			statusCode = http.StatusInternalServerError
-			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
-
-		}
-		resp.Metrics = metrics
+		resp.Metrics = &metrics
 		resp.ErrorResponse = nil
 
 	}
@@ -136,7 +137,11 @@ func getUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc {
 			writer.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if _, err = repository.Collect(metric); err == nil {
+		if err = storage.ValidateMetric(metric); err != nil {
+			writer.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if _, err = repository.Collect(*metric); err == nil {
 			writer.WriteHeader(http.StatusOK)
 			return
 		}
@@ -176,24 +181,19 @@ func getJSONUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc
 			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
 			return
 		}
-		m, err := storage.ConvertFrom(mRequest.Metrics)
-		if err != nil {
+		if err = storage.ValidateMetric(mRequest.Metrics); err != nil {
 			statusCode = http.StatusBadRequest
 			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
 			return
 		}
-		m, err = repository.Collect(m)
+
+		metric, err := repository.Collect(*mRequest.Metrics)
 		if err != nil {
 			statusCode = http.StatusInternalServerError
 			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
 			return
 		}
-		metrics, err := storage.ConvertToSend(m)
-		if err != nil {
-			statusCode = http.StatusBadRequest
-			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
-		}
-		resp.Metrics = metrics
+		resp.Metrics = &metric
 		resp.ErrorResponse = nil
 
 	}
