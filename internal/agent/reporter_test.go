@@ -10,14 +10,14 @@ import (
 func TestCollectMemMetricsCounter(t *testing.T) {
 	repository := storage.NewInMemMetricRepository()
 	CollectMemMetrics(repository)
-	val, _, _ := repository.Get(storage.CounterMetric, PollCount)
-	assert.Equal(t, `1`, val.ExportValue())
+	val, _ := repository.Get(storage.Metrics{ID: PollCount, MType: storage.CounterMetric})
+	assert.Equal(t, int64(1), *val.Delta)
 	CollectMemMetrics(repository)
-	val, _, _ = repository.Get(storage.CounterMetric, PollCount)
-	assert.Equal(t, `2`, val.ExportValue())
+	val, _ = repository.Get(storage.Metrics{ID: PollCount, MType: storage.CounterMetric})
+	assert.Equal(t, int64(2), *val.Delta)
 	CollectMemMetrics(repository)
-	val, _, _ = repository.Get(storage.CounterMetric, PollCount)
-	assert.NotEqual(t, `5`, val.ExportValue())
+	val, _ = repository.Get(storage.Metrics{ID: PollCount, MType: storage.CounterMetric})
+	assert.NotEqual(t, int64(5), *val.Delta)
 
 }
 
