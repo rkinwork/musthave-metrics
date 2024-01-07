@@ -6,6 +6,24 @@ import (
 	"testing"
 )
 
+func NewCounterMetrics(id string, delta int64) Metrics {
+	var d = &delta
+	return Metrics{
+		ID:    id,
+		MType: CounterMetric,
+		Delta: d,
+	}
+}
+
+func NewGaugeMetrics(id string, value float64) Metrics {
+	var v = &value
+	return Metrics{
+		ID:    id,
+		MType: GaugeMetric,
+		Value: v,
+	}
+}
+
 func TestGetFromRepository(t *testing.T) {
 	type want struct {
 		value Metrics
@@ -18,59 +36,50 @@ func TestGetFromRepository(t *testing.T) {
 		want   want
 	}{
 		{
-			name:   "get Gauge Value",
-			input:  NewEmptyMetrics("test", GaugeMetric, 0, 99),
-			metric: NewEmptyMetrics("test", GaugeMetric, 0, 0),
-			want:   want{NewEmptyMetrics("test", GaugeMetric, 0, 99), true},
+			name:  "get Gauge Value",
+			input: NewGaugeMetrics("test", 99),
+			metric: Metrics{
+				ID:    "test",
+				MType: GaugeMetric,
+			},
+			want: want{NewGaugeMetrics("test", 99), true},
 		},
-		//{
-		//	name: "get Gauge with decimals Value",
-		//	input: Gauge{
-		//		Name:  "test",
-		//		Value: 99.999,
-		//	},
-		//	metric: Gauge{
-		//		Name:  "test",
-		//		Value: 0,
-		//	},
-		//	want: want{"99.999", true},
-		//},
-		//{
-		//	name: "get Counter Value",
-		//	input: Counter{
-		//		Name:  "test",
-		//		Value: 99,
-		//	},
-		//	metric: Counter{
-		//		Name:  "test",
-		//		Value: 0,
-		//	},
-		//	want: want{"99", true},
-		//},
-		//{
-		//	name: "get Counter Value absent",
-		//	input: Counter{
-		//		Name:  "test",
-		//		Value: 99,
-		//	},
-		//	metric: Counter{
-		//		Name:  "absent",
-		//		Value: 0,
-		//	},
-		//	want: want{"0", false},
-		//},
-		//{
-		//	name: "get Gauge Value absent",
-		//	input: Gauge{
-		//		Name:  "test",
-		//		Value: 99,
-		//	},
-		//	metric: Gauge{
-		//		Name:  "absent",
-		//		Value: 0,
-		//	},
-		//	want: want{"0", false},
-		//},
+		{
+			name:  "get Gauge with decimals Value",
+			input: NewGaugeMetrics("test", 99.999),
+			metric: Metrics{
+				ID:    "test",
+				MType: GaugeMetric,
+			},
+			want: want{NewGaugeMetrics("test", 99.999), true},
+		},
+		{
+			name:  "get Counter Value",
+			input: NewCounterMetrics("test", 99),
+			metric: Metrics{
+				ID:    "test",
+				MType: CounterMetric,
+			},
+			want: want{NewCounterMetrics("test", 99), true},
+		},
+		{
+			name:  "get Counter Value absent",
+			input: NewCounterMetrics("test", 99),
+			metric: Metrics{
+				ID:    "absent",
+				MType: CounterMetric,
+			},
+			want: want{Metrics{}, false},
+		},
+		{
+			name:  "get Gauge Value absent",
+			input: NewGaugeMetrics("test", 99),
+			metric: Metrics{
+				ID:    "absent",
+				MType: GaugeMetric,
+			},
+			want: want{Metrics{}, false},
+		},
 	}
 
 	for _, tc := range tests {
@@ -82,7 +91,12 @@ func TestGetFromRepository(t *testing.T) {
 			metric, ok := repo.Get(tc.metric)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want.ok, ok)
-			if ok {
+			switch {
+			case !ok:
+				return
+			case metric.MType == CounterMetric:
+				assert.Equal(t, *tc.want.value.Delta, *metric.Delta)
+			case metric.MType == GaugeMetric:
 				assert.Equal(t, *tc.want.value.Value, *metric.Value)
 			}
 

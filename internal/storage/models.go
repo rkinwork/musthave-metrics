@@ -20,25 +20,7 @@ type Metrics struct {
 	Value *float64 `json:"value,omitempty"` // значение метрики в случае передачи gauge
 }
 
-func NewEmptyMetrics(id string, mtype string, delta int64, value float64) Metrics {
-	var d = &delta
-	var v = &value
-	return Metrics{
-		ID:    id,
-		MType: mtype,
-		Delta: d,
-		Value: v,
-	}
-}
-
 // GetHash returns a hash string composed of the ID and MType fields of the Metrics struct.
 func (m Metrics) GetHash() MetricHash {
 	return MetricHash(m.ID + m.MType)
 }
-
-//func (m Metrics) ExportValue() (string, bool) {
-//	if m.Value == nil {
-//		return "undefined"
-//	}
-//	return strconv.FormatFloat(*m.Value, 'f', -1, 64)
-//}
