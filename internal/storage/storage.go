@@ -1,8 +1,8 @@
 package storage
 
 type MetricStorage interface {
-	Get(metric Metrics) (Metrics, bool)
-	Set(metric Metrics) error
-	Delete(metric Metrics) error
+	Get(m Metrics) (Metrics, bool)
+	Set(m Metrics) error
+	Delete(m Metrics) error
 	IterMetrics() []Metrics
 }

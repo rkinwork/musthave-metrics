@@ -20,12 +20,12 @@ func run() error {
 	if err := logger.Initialize(zap.InfoLevel.String()); err != nil {
 		log.Fatalf("problems with initializing logger %e", err)
 	}
-	cnf, err := config.New(true)
+	cnf, err := config.NewAgent(true)
 	if err != nil {
 		log.Fatalf("problems with config parsing %e", err)
 	}
 
-	repository := storage.NewInMemMetricRepository()
+	repository := storage.NewRepository(cnf)
 	sender := agent.NewMetricSender(cnf.Address)
 	var i = 1
 	for {

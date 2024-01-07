@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"github.com/rkinwork/musthave-metrics/internal/config"
 )
 
@@ -39,13 +40,6 @@ func (m *MetricRepository) GetAllMetrics() []Metrics {
 	return m.storage.IterMetrics()
 }
 
-func NewRepository(cfg *config.Config) *MetricRepository {
-	switch cfg.StorageType {
-	default:
-		return NewInMemMetricRepository()
-	}
-}
-
-func NewInMemMetricRepository() *MetricRepository {
-	return &MetricRepository{storage: NewInMemMetricStorage()}
+func NewRepository(ctx context.Context, cfg *config.Config) *MetricRepository {
+	return &MetricRepository{storage: NewInMemMetricStorage(ctx, cfg)}
 }

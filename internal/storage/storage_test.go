@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"github.com/rkinwork/musthave-metrics/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"testing"
@@ -84,8 +85,9 @@ func TestGetFromRepository(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			repo := NewInMemMetricRepository()
-			var err error
+			cnf, err := config.New(false)
+			assert.NoError(t, err)
+			repo := NewRepository(cnf)
 			_, err = repo.Collect(tc.input)
 			require.NoError(t, err)
 			metric, ok := repo.Get(tc.metric)
