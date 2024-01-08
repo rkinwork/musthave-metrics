@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"context"
 	"github.com/go-resty/resty/v2"
 	"github.com/rkinwork/musthave-metrics/internal/config"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
@@ -9,9 +10,11 @@ import (
 )
 
 func TestCollectMemMetricsCounter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	cnf, err := config.New(false)
 	assert.NoError(t, err)
-	repository := storage.NewRepository(cnf)
+	repository := storage.NewRepository(ctx, cnf)
 	CollectMemMetrics(repository)
 	val, _ := repository.Get(storage.Metrics{ID: PollCount, MType: storage.CounterMetric})
 	assert.Equal(t, int64(1), *val.Delta)
