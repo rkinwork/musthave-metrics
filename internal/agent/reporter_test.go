@@ -1,23 +1,29 @@
 package agent
 
 import (
+	"context"
 	"github.com/go-resty/resty/v2"
+	"github.com/rkinwork/musthave-metrics/internal/config"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"testing"
 )
 
 func TestCollectMemMetricsCounter(t *testing.T) {
-	repository := storage.NewInMemMetricRepository()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cnf, err := config.New(false)
+	assert.NoError(t, err)
+	repository := storage.NewRepository(ctx, cnf)
 	CollectMemMetrics(repository)
-	val, _, _ := repository.Get(storage.CounterMetric, PollCount)
-	assert.Equal(t, `1`, val.ExportValue())
+	val, _ := repository.Get(storage.Metrics{ID: PollCount, MType: storage.CounterMetric})
+	assert.Equal(t, int64(1), *val.Delta)
 	CollectMemMetrics(repository)
-	val, _, _ = repository.Get(storage.CounterMetric, PollCount)
-	assert.Equal(t, `2`, val.ExportValue())
+	val, _ = repository.Get(storage.Metrics{ID: PollCount, MType: storage.CounterMetric})
+	assert.Equal(t, int64(2), *val.Delta)
 	CollectMemMetrics(repository)
-	val, _, _ = repository.Get(storage.CounterMetric, PollCount)
-	assert.NotEqual(t, `5`, val.ExportValue())
+	val, _ = repository.Get(storage.Metrics{ID: PollCount, MType: storage.CounterMetric})
+	assert.NotEqual(t, int64(5), *val.Delta)
 
 }
 

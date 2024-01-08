@@ -1,9 +1,12 @@
 package main
 
 import (
+	"context"
 	"github.com/rkinwork/musthave-metrics/internal/agent"
 	"github.com/rkinwork/musthave-metrics/internal/config"
+	"github.com/rkinwork/musthave-metrics/internal/logger"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
+	"go.uber.org/zap"
 	"log"
 	"time"
 )
@@ -15,12 +18,17 @@ func main() {
 }
 
 func run() error {
-	cnf, err := config.New()
+	if err := logger.Initialize(zap.InfoLevel.String()); err != nil {
+		log.Fatalf("problems with initializing logger %e", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cnf, err := config.NewAgent(true)
 	if err != nil {
 		log.Fatalf("problems with config parsing %e", err)
 	}
 
-	repository := storage.NewInMemMetricRepository()
+	repository := storage.NewRepository(ctx, cnf)
 	sender := agent.NewMetricSender(cnf.Address)
 	var i = 1
 	for {
