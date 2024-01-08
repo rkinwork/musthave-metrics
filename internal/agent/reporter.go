@@ -245,9 +245,9 @@ func getMemMetrics() []storage.Metrics {
 }
 
 // CollectMemMetrics Every invocation adds metrics to the storage of metrics
-func CollectMemMetrics(repository *storage.MetricRepository) {
+func CollectMemMetrics(repository storage.IMetricRepository) {
 	for _, metric := range getMemMetrics() {
-		if _, err := repository.Collect(metric); err != nil {
+		if _, err := repository.Collect(&metric); err != nil {
 			log.Printf("Problems with saving metric %v", metric)
 		}
 	}
@@ -307,7 +307,7 @@ func NewMetricSender(serverAddress string) *MetricSender {
 	}
 }
 
-func SendMetrics(repository *storage.MetricRepository, sender *MetricSender) {
+func SendMetrics(repository storage.IMetricRepository, sender *MetricSender) {
 	for _, metric := range repository.GetAllMetrics() {
 		if err := sender.SendMetric(metric); err != nil {
 			logError(metric, err)

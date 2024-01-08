@@ -10,7 +10,6 @@ import (
 	"go.uber.org/zap"
 	"log"
 	"net/http"
-	"os"
 	"os/signal"
 	"syscall"
 )
@@ -29,30 +28,28 @@ func run() error {
 	if err != nil {
 		log.Fatalf("problems with config parsing %e", err)
 	}
-	// Create a new context
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
-	// Create a channel to listen for OS signals
-	sigs := make(chan os.Signal, 1)
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	// Register the channel to receive SIGINT and SIGTERM signals
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	st := storage.NewRepository(ctx, cnf)
-	serverRouter := server.NewMetricsRouter(st)
+	metricSaver := storage.NewMetricsSaver(
+		cnf,
+		&storage.JSONFileSaver{FilePath: cnf.FileStoragePath, IMetricRepository: storage.NewRepository()},
+	)
+	metricSaver.Start(ctx)
+	serverRouter := server.NewMetricsRouter(metricSaver)
 	srv := &http.Server{Addr: cnf.Address, Handler: serverRouter}
 
-	// Start a goroutine to handle the signal
 	go func() {
-		sig := <-sigs
-		logger.Log.Info("Received signal, Exiting...", zap.String("signal", sig.String()))
-		srv.Shutdown(ctx)
-		cancel() // Invoke cancel on receiving a signal
-
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Fatalf("listen and serve returned err: %v", err)
+		}
 	}()
+	<-ctx.Done()
 
-	if serr := srv.ListenAndServe(); serr != nil && !errors.Is(serr, http.ErrServerClosed) {
-		err = serr
+	if err = srv.Shutdown(context.TODO()); err != nil { // Use here context with a required timeout
+		log.Printf("server shutdown returned an err: %v\n", err)
 	}
+	metricSaver.Done()
 	return err
 }

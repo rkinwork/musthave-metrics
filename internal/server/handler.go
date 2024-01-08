@@ -22,7 +22,7 @@ const (
 
 var indexTemplate = template.Must(template.New("index").Parse(GenerateHTML()))
 
-func NewMetricsRouter(repository *storage.MetricRepository) chi.Router {
+func NewMetricsRouter(repository storage.IMetricRepository) chi.Router {
 	router := chi.NewRouter()
 	router.Use(logger.WithLogging)
 	router.Use(middleware.Compress(5))
@@ -39,7 +39,7 @@ func NewMetricsRouter(repository *storage.MetricRepository) chi.Router {
 	return router
 }
 
-func getMainHandler(repository *storage.MetricRepository) http.HandlerFunc {
+func getMainHandler(repository storage.IMetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		metrics := repository.GetAllMetrics()
 		writer.Header().Set("Content-Type", "text/html")
@@ -53,7 +53,7 @@ func getMainHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	}
 }
 
-func getValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
+func getValueHandler(repository storage.IMetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		metricType, name, value := chi.URLParam(request, "metricType"), chi.URLParam(request, "name"), chi.URLParam(request, "value")
 		m, err := storage.ParseMetric(metricType, name, value)
@@ -61,7 +61,7 @@ func getValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
 			writer.WriteHeader(http.StatusNotFound)
 			return
 		}
-		metric, ok := repository.Get(*m)
+		metric, ok := repository.Get(m)
 		if !ok {
 			writer.WriteHeader(http.StatusNotFound)
 			return
@@ -79,7 +79,7 @@ func getValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	}
 }
 
-func getJSONValueHandler(repository *storage.MetricRepository) http.HandlerFunc {
+func getJSONValueHandler(repository storage.IMetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		contentType := request.Header.Get("Content-type")
 		writer.Header().Set("Content-Type", "application/json")
@@ -113,7 +113,7 @@ func getJSONValueHandler(repository *storage.MetricRepository) http.HandlerFunc 
 			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
 			return
 		}
-		metrics, ok := repository.Get(*mRequest.Metrics)
+		metrics, ok := repository.Get(mRequest.Metrics)
 		if !ok {
 			statusCode = http.StatusNotFound
 			errorResp = storage.ErrorResponse{ErrorValue: metricNotFountError}
@@ -125,7 +125,7 @@ func getJSONValueHandler(repository *storage.MetricRepository) http.HandlerFunc 
 	}
 }
 
-func getUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc {
+func getUpdateHandler(repository storage.IMetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		metricType, name, value := chi.URLParam(request, "metricType"), chi.URLParam(request, "name"), chi.URLParam(request, "value")
 		if value == "" {
@@ -141,7 +141,7 @@ func getUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc {
 			writer.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if _, err = repository.Collect(*metric); err == nil {
+		if _, err = repository.Collect(metric); err == nil {
 			writer.WriteHeader(http.StatusOK)
 			return
 		}
@@ -149,7 +149,7 @@ func getUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc {
 	}
 }
 
-func getJSONUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc {
+func getJSONUpdateHandler(repository storage.IMetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		contentType := request.Header.Get("Content-type")
 		writer.Header().Set("Content-Type", "application/json")
@@ -187,13 +187,13 @@ func getJSONUpdateHandler(repository *storage.MetricRepository) http.HandlerFunc
 			return
 		}
 
-		metric, err := repository.Collect(*mRequest.Metrics)
+		metric, err := repository.Collect(mRequest.Metrics)
 		if err != nil {
 			statusCode = http.StatusInternalServerError
 			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
 			return
 		}
-		resp.Metrics = &metric
+		resp.Metrics = metric
 		resp.ErrorResponse = nil
 
 	}

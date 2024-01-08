@@ -25,7 +25,7 @@ func run() error {
 		log.Fatalf("problems with config parsing %e", err)
 	}
 
-	repository := storage.NewRepository(cnf)
+	repository := storage.NewRepository()
 	sender := agent.NewMetricSender(cnf.Address)
 	var i = 1
 	for {

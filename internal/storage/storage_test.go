@@ -1,24 +1,23 @@
 package storage
 
 import (
-	"github.com/rkinwork/musthave-metrics/internal/config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"testing"
 )
 
-func NewCounterMetrics(id string, delta int64) Metrics {
+func NewCounterMetrics(id string, delta int64) *Metrics {
 	var d = &delta
-	return Metrics{
+	return &Metrics{
 		ID:    id,
 		MType: CounterMetric,
 		Delta: d,
 	}
 }
 
-func NewGaugeMetrics(id string, value float64) Metrics {
+func NewGaugeMetrics(id string, value float64) *Metrics {
 	var v = &value
-	return Metrics{
+	return &Metrics{
 		ID:    id,
 		MType: GaugeMetric,
 		Value: v,
@@ -27,19 +26,19 @@ func NewGaugeMetrics(id string, value float64) Metrics {
 
 func TestGetFromRepository(t *testing.T) {
 	type want struct {
-		value Metrics
+		value *Metrics
 		ok    bool
 	}
 	tests := []struct {
 		name   string
-		input  Metrics
-		metric Metrics
+		input  *Metrics
+		metric *Metrics
 		want   want
 	}{
 		{
 			name:  "get Gauge Value",
 			input: NewGaugeMetrics("test", 99),
-			metric: Metrics{
+			metric: &Metrics{
 				ID:    "test",
 				MType: GaugeMetric,
 			},
@@ -48,7 +47,7 @@ func TestGetFromRepository(t *testing.T) {
 		{
 			name:  "get Gauge with decimals Value",
 			input: NewGaugeMetrics("test", 99.999),
-			metric: Metrics{
+			metric: &Metrics{
 				ID:    "test",
 				MType: GaugeMetric,
 			},
@@ -57,7 +56,7 @@ func TestGetFromRepository(t *testing.T) {
 		{
 			name:  "get Counter Value",
 			input: NewCounterMetrics("test", 99),
-			metric: Metrics{
+			metric: &Metrics{
 				ID:    "test",
 				MType: CounterMetric,
 			},
@@ -66,29 +65,27 @@ func TestGetFromRepository(t *testing.T) {
 		{
 			name:  "get Counter Value absent",
 			input: NewCounterMetrics("test", 99),
-			metric: Metrics{
+			metric: &Metrics{
 				ID:    "absent",
 				MType: CounterMetric,
 			},
-			want: want{Metrics{}, false},
+			want: want{&Metrics{}, false},
 		},
 		{
 			name:  "get Gauge Value absent",
 			input: NewGaugeMetrics("test", 99),
-			metric: Metrics{
+			metric: &Metrics{
 				ID:    "absent",
 				MType: GaugeMetric,
 			},
-			want: want{Metrics{}, false},
+			want: want{&Metrics{}, false},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			cnf, err := config.New(false)
-			assert.NoError(t, err)
-			repo := NewRepository(cnf)
-			_, err = repo.Collect(tc.input)
+			repo := NewRepository()
+			_, err := repo.Collect(tc.input)
 			require.NoError(t, err)
 			metric, ok := repo.Get(tc.metric)
 			require.NoError(t, err)

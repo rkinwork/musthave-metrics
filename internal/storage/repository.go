@@ -1,26 +1,22 @@
 package storage
 
-import (
-	"context"
-	"github.com/rkinwork/musthave-metrics/internal/config"
-)
-
 type IMetricRepository interface {
-	Get(metric Metrics) (Metrics, bool, error)
-	Collect(metric Metrics) (Metrics, error)
-	Delete(metric Metrics) error
+	Get(metric *Metrics) (Metrics, bool)
+	Collect(metric *Metrics) (*Metrics, error)
+	Set(metric *Metrics) (*Metrics, error)
+	Delete(metric *Metrics) error
 	GetAllMetrics() []Metrics
 }
 
 type MetricRepository struct {
-	storage MetricStorage
+	storage IMetricStorage
 }
 
-func (m *MetricRepository) Get(metric Metrics) (Metrics, bool) {
+func (m *MetricRepository) Get(metric *Metrics) (Metrics, bool) {
 	return m.storage.Get(metric)
 }
 
-func (m *MetricRepository) Collect(metric Metrics) (Metrics, error) {
+func (m *MetricRepository) Collect(metric *Metrics) (*Metrics, error) {
 	switch metric.MType {
 	case CounterMetric:
 		delta := *metric.Delta
@@ -29,10 +25,14 @@ func (m *MetricRepository) Collect(metric Metrics) (Metrics, error) {
 		}
 		metric.Delta = &delta
 	}
-	return metric, m.storage.Set(metric)
+	return metric, m.storage.Set(*metric)
 }
 
-func (m *MetricRepository) Delete(metric Metrics) error {
+func (m *MetricRepository) Set(metrics *Metrics) (*Metrics, error) {
+	return metrics, m.storage.Set(*metrics)
+}
+
+func (m *MetricRepository) Delete(metric *Metrics) error {
 	return m.storage.Delete(metric)
 }
 
@@ -40,6 +40,6 @@ func (m *MetricRepository) GetAllMetrics() []Metrics {
 	return m.storage.IterMetrics()
 }
 
-func NewRepository(ctx context.Context, cfg *config.Config) *MetricRepository {
-	return &MetricRepository{storage: NewInMemMetricStorage(ctx, cfg)}
+func NewRepository() IMetricRepository {
+	return &MetricRepository{storage: NewInMemMetricStorage()}
 }

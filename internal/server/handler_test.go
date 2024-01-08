@@ -3,7 +3,6 @@ package server
 import (
 	"bytes"
 	"compress/gzip"
-	"github.com/rkinwork/musthave-metrics/internal/config"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,12 +30,11 @@ func testRequest(t *testing.T, ts *httptest.Server, method,
 }
 
 func TestValueHandler(t *testing.T) {
-	cnf, err := config.New(false)
-	assert.NoError(t, err)
-	repo := storage.NewRepository(cnf)
+	var err error
+	repo := storage.NewRepository()
 
 	delta := int64(5)
-	_, err = repo.Collect(storage.Metrics{
+	_, err = repo.Collect(&storage.Metrics{
 		ID:    "clicks",
 		MType: storage.CounterMetric,
 		Delta: &delta,
@@ -90,9 +88,7 @@ func TestValueHandler(t *testing.T) {
 }
 
 func TestUpdateHandler(t *testing.T) {
-	cnf, err := config.New(false)
-	assert.NoError(t, err)
-	repo := storage.NewRepository(cnf)
+	repo := storage.NewRepository()
 	ts := httptest.NewServer(NewMetricsRouter(repo))
 	defer ts.Close()
 	type want struct {
@@ -183,12 +179,11 @@ func TestUpdateHandler(t *testing.T) {
 }
 
 func TestJSONUpdateHandler(t *testing.T) {
-	cnf, err := config.New(false)
-	assert.NoError(t, err)
-	repo := storage.NewRepository(cnf)
+	var err error
+	repo := storage.NewRepository()
 	ts := httptest.NewServer(NewMetricsRouter(repo))
 	delta := int64(1)
-	_, err = repo.Collect(storage.Metrics{
+	_, err = repo.Collect(&storage.Metrics{
 		ID:    "pollcount",
 		MType: storage.CounterMetric,
 		Delta: &delta,
@@ -276,19 +271,18 @@ func TestJSONUpdateHandler(t *testing.T) {
 }
 
 func TestJSONValueHandler(t *testing.T) {
-	cnf, err := config.New(false)
-	assert.NoError(t, err)
-	repo := storage.NewRepository(cnf)
+	var err error
+	repo := storage.NewRepository()
 	delta := int64(1)
 	value := float64(1)
-	_, err = repo.Collect(storage.Metrics{
+	_, err = repo.Collect(&storage.Metrics{
 		ID:    "test",
 		MType: storage.CounterMetric,
 		Delta: &delta,
 		Value: nil,
 	})
 	require.NoError(t, err)
-	_, err = repo.Collect(storage.Metrics{
+	_, err = repo.Collect(&storage.Metrics{
 		ID:    "test",
 		MType: storage.GaugeMetric,
 		Delta: nil,
@@ -352,11 +346,10 @@ func TestJSONValueHandler(t *testing.T) {
 }
 
 func TestJSONGzipHandling(t *testing.T) {
-	cnf, err := config.New(false)
-	assert.NoError(t, err)
-	repo := storage.NewRepository(cnf)
+
+	repo := storage.NewRepository()
 	delta := int64(1)
-	baseValue := storage.Metrics{
+	baseValue := &storage.Metrics{
 		ID:    "test",
 		MType: storage.CounterMetric,
 		Delta: &delta,
