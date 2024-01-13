@@ -6,99 +6,97 @@ import (
 	"testing"
 )
 
+func NewCounterMetrics(id string, delta int64) *Metrics {
+	var d = &delta
+	return &Metrics{
+		ID:    id,
+		MType: CounterMetric,
+		Delta: d,
+	}
+}
+
+func NewGaugeMetrics(id string, value float64) *Metrics {
+	var v = &value
+	return &Metrics{
+		ID:    id,
+		MType: GaugeMetric,
+		Value: v,
+	}
+}
+
 func TestGetFromRepository(t *testing.T) {
 	type want struct {
-		value string
+		value *Metrics
 		ok    bool
 	}
 	tests := []struct {
 		name   string
-		input  Metric
-		metric Metric
+		input  *Metrics
+		metric *Metrics
 		want   want
 	}{
 		{
-			name: "get Gauge Value",
-			input: Gauge{
-				Name:  "test",
-				Value: 99,
+			name:  "get Gauge Value",
+			input: NewGaugeMetrics("test", 99),
+			metric: &Metrics{
+				ID:    "test",
+				MType: GaugeMetric,
 			},
-			metric: Gauge{
-				Name:  "test",
-				Value: 0,
-			},
-			want: want{"99", true},
+			want: want{NewGaugeMetrics("test", 99), true},
 		},
 		{
-			name: "get Gauge with decimals Value",
-			input: Gauge{
-				Name:  "test",
-				Value: 99.999,
+			name:  "get Gauge with decimals Value",
+			input: NewGaugeMetrics("test", 99.999),
+			metric: &Metrics{
+				ID:    "test",
+				MType: GaugeMetric,
 			},
-			metric: Gauge{
-				Name:  "test",
-				Value: 0,
-			},
-			want: want{"99.999", true},
+			want: want{NewGaugeMetrics("test", 99.999), true},
 		},
 		{
-			name: "get Counter Value",
-			input: Counter{
-				Name:  "test",
-				Value: 99,
+			name:  "get Counter Value",
+			input: NewCounterMetrics("test", 99),
+			metric: &Metrics{
+				ID:    "test",
+				MType: CounterMetric,
 			},
-			metric: Counter{
-				Name:  "test",
-				Value: 0,
-			},
-			want: want{"99", true},
+			want: want{NewCounterMetrics("test", 99), true},
 		},
 		{
-			name: "get Counter Value absent",
-			input: Counter{
-				Name:  "test",
-				Value: 99,
+			name:  "get Counter Value absent",
+			input: NewCounterMetrics("test", 99),
+			metric: &Metrics{
+				ID:    "absent",
+				MType: CounterMetric,
 			},
-			metric: Counter{
-				Name:  "absent",
-				Value: 0,
-			},
-			want: want{"0", false},
+			want: want{&Metrics{}, false},
 		},
 		{
-			name: "get Gauge Value absent",
-			input: Gauge{
-				Name:  "test",
-				Value: 99,
+			name:  "get Gauge Value absent",
+			input: NewGaugeMetrics("test", 99),
+			metric: &Metrics{
+				ID:    "absent",
+				MType: GaugeMetric,
 			},
-			metric: Gauge{
-				Name:  "absent",
-				Value: 0,
-			},
-			want: want{"0", false},
+			want: want{&Metrics{}, false},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			g := NewInMemMetricStorage()
-			c := NewInMemMetricStorage()
-			repo := NewMetricRepository(g, c)
-			var err error
-			switch v := tc.input.(type) {
-			case Gauge:
-				err = g.Set(v)
-			case Counter:
-				err = c.Set(v)
-			default:
-				panic("unknown type")
-			}
+			repo := NewRepository()
+			_, err := repo.Collect(tc.input)
 			require.NoError(t, err)
-			metric, ok, err := repo.Get(tc.metric.ExportTypeName(), tc.metric.GetName())
+			metric, ok := repo.Get(tc.metric)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want.ok, ok)
-			if ok {
-				assert.Equal(t, tc.want.value, metric.ExportValue())
+			switch {
+			case !ok:
+				return
+			case metric.MType == CounterMetric:
+				assert.Equal(t, *tc.want.value.Delta, *metric.Delta)
+			case metric.MType == GaugeMetric:
+				assert.Equal(t, *tc.want.value.Value, *metric.Value)
 			}
 
 		})

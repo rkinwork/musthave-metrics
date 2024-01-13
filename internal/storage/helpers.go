@@ -1,44 +1,80 @@
 package storage
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
 	"regexp"
 	"strconv"
 )
 
-const metricValueMaxLength = 20
+type MetricsRequest struct {
+	*Metrics
+}
+
+type MetricsResponse struct {
+	*Metrics
+	*ErrorResponse
+}
+
+type ErrorResponse struct {
+	ErrorValue string `json:"error"`
+}
 
 var validNamePattern = regexp.MustCompile(`^[a-zA-Z]\w{0,127}$`)
-var validGaugePattern = regexp.MustCompile(`^-?\d+(\.\d+)*$`)
-var validCounterPattern = regexp.MustCompile(`^\d+$`)
 
-func ParseMetric(valType, name, val string) (Metric, error) {
-	var err error
-	if !validNamePattern.MatchString(name) {
-		return nil, errors.New("not valid metric Name")
+func ValidateMetric(m *Metrics) error {
+	if !validNamePattern.MatchString(m.ID) {
+		return errors.New("not valid metric Name")
 	}
-	if len(val) > metricValueMaxLength {
-		return nil, errors.New("not valid metric Value")
+	if m.MType == CounterMetric && m.Delta == nil {
+		return errors.New("delta value is required for counter metric")
+	}
+	if m.MType == CounterMetric && *m.Delta < 1 {
+		return errors.New("delta value should be positive")
+	}
+	if m.MType == GaugeMetric && m.Value == nil {
+		return errors.New("value is required for gauge metric")
+	}
+	return nil
+}
+
+func ParseMetric(valType, name, val string) (*Metrics, error) {
+	res := &Metrics{}
+	res.ID = name
+	switch valType {
+	case GaugeMetric, CounterMetric:
+		res.MType = valType
+		if val == "" {
+			return res, nil
+		}
+	default:
+		return nil, errors.New("not valid metric type")
+	}
+	var delta *int64
+	var value *float64
+
+	if s, err := strconv.ParseFloat(val, 64); err == nil {
+		value = &s
+	}
+	if s, err := strconv.ParseInt(val, 10, 64); err == nil {
+		delta = &s
 	}
 	switch valType {
 	case GaugeMetric:
-		if !validGaugePattern.MatchString(val) {
-			err = errors.New("not valid metric Value")
-		}
-		if s, err := strconv.ParseFloat(val, 64); err == nil {
-			return Gauge{Name: name, Value: s}, nil
-		}
-
+		res.Value = value
 	case CounterMetric:
-		if !validCounterPattern.MatchString(val) {
-			err = errors.New("not valid metric Value")
-		}
-		if s, err := strconv.ParseInt(val, 10, 64); err == nil {
-			return Counter{Name: name, Value: s}, nil
-		}
-	default:
-		err = errors.New("not valid metric type")
+		res.Delta = delta
 	}
+	return res, nil
 
-	return nil, err
+}
+
+func ParseJSONRequest(reader io.Reader) (*MetricsRequest, error) {
+	var m MetricsRequest
+	err := json.NewDecoder(reader).Decode(&m)
+	if err != nil {
+		return nil, err
+	}
+	return &m, nil
 }
