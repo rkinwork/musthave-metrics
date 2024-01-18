@@ -57,7 +57,7 @@ func getMainHandler(repository storage.IMetricRepository) http.HandlerFunc {
 func getPingHandler(repository storage.IMetricRepository) http.HandlerFunc {
 	return func(writer http.ResponseWriter, request *http.Request) {
 		writer.Header().Set("Content-Type", "text/html")
-		if err := repository.Ping(); err != nil {
+		if err := repository.Ping(request.Context()); err != nil {
 			writer.WriteHeader(http.StatusInternalServerError)
 			return
 		}

@@ -3,6 +3,7 @@ package server
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"fmt"
 	"github.com/rkinwork/musthave-metrics/internal/mocks"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
@@ -503,7 +504,7 @@ func TestGetPingHandler(t *testing.T) {
 			isError:    false,
 			wantStatus: http.StatusOK,
 			setCase: func() {
-				repo.EXPECT().Ping().Return(nil)
+				repo.EXPECT().Ping(context.Background()).Return(nil)
 			},
 		},
 		{
@@ -511,7 +512,7 @@ func TestGetPingHandler(t *testing.T) {
 			isError:    true,
 			wantStatus: http.StatusInternalServerError,
 			setCase: func() {
-				repo.EXPECT().Ping().Return(fmt.Errorf("no connetion"))
+				repo.EXPECT().Ping(context.Background()).Return(fmt.Errorf("no connetion"))
 			},
 		},
 	}
