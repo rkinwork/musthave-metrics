@@ -28,6 +28,7 @@ func NewMetricsRouter(repository storage.IMetricRepository) chi.Router {
 	router.Use(middleware.Compress(5))
 	router.Use(gzipper.CompressedBodyReaderMiddleware)
 	router.Get("/", getMainHandler(repository))
+	router.Get("/ping", getPingHandler(repository))
 	router.Route("/update", func(router chi.Router) {
 		router.Post("/", getJSONUpdateHandler(repository))
 		router.Post("/{metricType}/{name}/{value}", getUpdateHandler(repository))
@@ -50,6 +51,17 @@ func getMainHandler(repository storage.IMetricRepository) http.HandlerFunc {
 			return
 		}
 		logError(writer.Write([]byte("Empty storage")))
+	}
+}
+
+func getPingHandler(repository storage.IMetricRepository) http.HandlerFunc {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "text/html")
+		if err := repository.Ping(); err != nil {
+			writer.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		writer.WriteHeader(http.StatusOK)
 	}
 }
 

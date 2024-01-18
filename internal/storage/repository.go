@@ -6,6 +6,7 @@ type IMetricRepository interface {
 	Set(metric *Metrics) (*Metrics, error)
 	Delete(metric *Metrics) error
 	GetAllMetrics() []Metrics
+	Ping() error
 }
 
 type MetricRepository struct {
@@ -38,6 +39,10 @@ func (m *MetricRepository) Delete(metric *Metrics) error {
 
 func (m *MetricRepository) GetAllMetrics() []Metrics {
 	return m.storage.IterMetrics()
+}
+
+func (m *MetricRepository) Ping() error {
+	return nil
 }
 
 func NewRepository() IMetricRepository {
