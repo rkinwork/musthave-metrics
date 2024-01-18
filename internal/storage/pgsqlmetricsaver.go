@@ -2,7 +2,8 @@ package storage
 
 import (
 	"context"
-	"github.com/jackc/pgx/v5"
+	"database/sql"
+	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/rkinwork/musthave-metrics/internal/config"
 	"github.com/rkinwork/musthave-metrics/internal/logger"
 	"go.uber.org/zap"
@@ -10,7 +11,7 @@ import (
 )
 
 type PgSaver struct {
-	Conn      *pgx.Conn
+	Conn      *sql.DB
 	Schema    string
 	TableName string
 	IMetricRepository
@@ -21,15 +22,15 @@ func (ps *PgSaver) CreateTable(ctx context.Context) error {
 	// Use the sync.Once member to ensure CreateTable only called once
 	var createErr error
 	ps.once.Do(func() {
-		tx, err := ps.Conn.Begin(ctx)
+		tx, err := ps.Conn.BeginTx(ctx, nil)
 		if err != nil {
 			createErr = err
 			return
 		}
 
-		defer tx.Rollback(ctx)
+		defer tx.Rollback()
 
-		_, err = tx.Exec(ctx,
+		_, err = tx.ExecContext(ctx,
 			`CREATE TABLE IF NOT EXISTS public.metrics (
 				 id text not null,
 				 mtype text not null,
@@ -42,7 +43,7 @@ func (ps *PgSaver) CreateTable(ctx context.Context) error {
 			return
 		}
 
-		createErr = tx.Commit(ctx)
+		createErr = tx.Commit()
 	})
 
 	return createErr
@@ -57,30 +58,32 @@ func (ps *PgSaver) Save(ctx context.Context) error {
 	}
 
 	metrics := ps.GetAllMetrics()
-	columns := []string{"id", "type", "delta", "value"}
 
 	values := make([][]interface{}, len(metrics))
 	for i, metric := range metrics {
 		values[i] = []interface{}{metric.ID, metric.MType, metric.Delta, metric.Value}
 	}
 
-	tx, err := ps.Conn.Begin(ctx)
+	tx, err := ps.Conn.Begin()
 	if err != nil {
 		return err
 	}
 
-	defer tx.Rollback(ctx)
+	defer tx.Rollback()
 
-	if _, err := tx.Exec(ctx, `TRUNCATE TABLE public.metrics`); err != nil {
+	if _, err := tx.ExecContext(ctx, `TRUNCATE TABLE public.metrics`); err != nil {
 		return err
 	}
 
-	_, err = tx.CopyFrom(ctx, pgx.Identifier{ps.Schema, ps.TableName}, columns, pgx.CopyFromRows(values))
-	if err != nil {
-		return err
+	for i := range metrics {
+		// execute your insert query here.
+		_, err = tx.ExecContext(ctx, "INSERT INTO public.metrics(id, mtype, delta, mvalue) VALUES($1, $2, $3, $4)", metrics[i].ID, metrics[i].MType, metrics[i].Delta, metrics[i].Value)
+		if err != nil {
+			return tx.Rollback() // don't forget to rollback here.
+		}
 	}
 
-	return tx.Commit(ctx)
+	return tx.Commit()
 }
 
 func (ps *PgSaver) Load(ctx context.Context) error {
@@ -92,7 +95,7 @@ func (ps *PgSaver) Load(ctx context.Context) error {
 	if err := ps.CreateTable(ctx); err != nil {
 		return err
 	}
-	rows, err := ps.Conn.Query(ctx, `SELECT id, mtype, delta, mvalue FROM public.metrics`)
+	rows, err := ps.Conn.QueryContext(ctx, `SELECT id, mtype, delta, mvalue FROM public.metrics`)
 	if err != nil {
 		return err
 	}
@@ -121,22 +124,18 @@ func (ps *PgSaver) Load(ctx context.Context) error {
 	return nil
 }
 
-func (ps *PgSaver) Ping(ctx context.Context) error {
-	return ps.Conn.Ping(ctx)
+func (ps *PgSaver) Ping(_ context.Context) error {
+	return ps.Conn.Ping()
 }
 
-func (ps *PgSaver) Close(ctx context.Context) error {
-	return ps.Conn.Close(ctx)
+func (ps *PgSaver) Close(_ context.Context) error {
+	return ps.Conn.Close()
 }
 
 func NewPgSaver(cfg *config.Config, repository IMetricRepository) (*PgSaver, error) {
-	connConfig, err := pgx.ParseConfig(cfg.DatabaseDSN)
+	conn, err := sql.Open("pgx", cfg.DatabaseDSN)
 	if err != nil {
-		return nil, err
-	}
-	conn, err := pgx.ConnectConfig(context.Background(), connConfig)
-	if err != nil {
-		return nil, err
+		panic(err)
 	}
 	return &PgSaver{
 		Conn:              conn,

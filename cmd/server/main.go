@@ -35,8 +35,11 @@ func run() error {
 	repository := storage.NewRepository()
 	var saver storage.IMetricSaver
 
-	saver, err = storage.NewPgSaver(cnf, repository)
-	if err != nil {
+	if cnf.DatabaseDSN != "" {
+		saver, err = storage.NewPgSaver(cnf, repository)
+	}
+
+	if cnf.DatabaseDSN == "" {
 		saver = storage.NewFileSaver(*cnf, repository)
 	}
 
