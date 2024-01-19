@@ -30,7 +30,7 @@ func ValidateMetric(m *Metrics) error {
 	if m.MType == CounterMetric && m.Delta == nil {
 		return errors.New("delta value is required for counter metric")
 	}
-	if m.MType == CounterMetric && *m.Delta < 1 {
+	if m.MType == CounterMetric && *m.Delta < 0 {
 		return errors.New("delta value should be positive")
 	}
 	if m.MType == GaugeMetric && m.Value == nil {

@@ -28,13 +28,11 @@ func run() error {
 	if err != nil {
 		log.Fatalf("problems with config parsing %e", err)
 	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	repository := storage.NewRepository()
 	var saver storage.IMetricSaver
-
 	if cnf.DatabaseDSN != "" {
 		saver, err = storage.NewPgSaver(cnf, repository)
 	}
@@ -42,7 +40,6 @@ func run() error {
 	if cnf.DatabaseDSN == "" {
 		saver = storage.NewFileSaver(*cnf, repository)
 	}
-
 	metricSaver := storage.NewMetricsSaver(
 		cnf,
 		saver,

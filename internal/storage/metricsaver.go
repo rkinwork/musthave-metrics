@@ -64,7 +64,7 @@ func (ms *MetricsSaver) Collect(metric *Metrics) (*Metrics, error) {
 }
 
 func NewMetricsSaver(config *config.Config, repo IMetricSaver) *MetricsSaver {
-	var ticker *time.Ticker
+	var ticker = new(time.Ticker)
 	if config.StoreInterval > 0 {
 		ticker = time.NewTicker(config.StoreInterval)
 	}

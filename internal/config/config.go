@@ -103,6 +103,9 @@ func loadFromEnv(cfg *Config) error {
 	if parsedConfig.PollInterval > 0 {
 		cfg.PollInterval = time.Duration(parsedConfig.PollInterval) * time.Second
 	}
+	if parsedConfig.StoreInterval >= 0 {
+		cfg.StoreInterval = time.Duration(parsedConfig.StoreInterval) * time.Second
+	}
 	if parsedConfig.DatabaseDSN != "" {
 		cfg.DatabaseDSN = parsedConfig.DatabaseDSN
 	}
