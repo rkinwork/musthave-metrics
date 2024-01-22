@@ -258,10 +258,10 @@ type MetricSender struct {
 	*resty.Client
 }
 
-func (s *MetricSender) SendMetric(metric storage.Metrics) error {
+func (s *MetricSender) SendMetric(metrics []storage.Metrics) error {
 	updateEndpoint := fmt.Sprintf(`%s/update/`, s.ServerAddress)
 
-	bd := storage.MetricsRequest{Metrics: &metric}
+	bd := storage.MetricsRequest{Metrics: metrics}
 	jsonBody, err := json.Marshal(bd)
 	if err != nil {
 		return err
@@ -308,13 +308,8 @@ func NewMetricSender(serverAddress string) *MetricSender {
 }
 
 func SendMetrics(repository storage.IMetricRepository, sender *MetricSender) {
-	for _, metric := range repository.GetAllMetrics() {
-		if err := sender.SendMetric(metric); err != nil {
-			logError(metric, err)
-		}
+	if err := sender.SendMetric(repository.GetAllMetrics()); err != nil {
+		log.Printf("Problems with sending: %v", err)
 	}
-}
 
-func logError(metric storage.Metrics, err error) {
-	log.Printf("Problems with sending: %v, %v", metric, err)
 }

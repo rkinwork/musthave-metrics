@@ -9,7 +9,23 @@ import (
 )
 
 type MetricsRequest struct {
-	*Metrics
+	Metrics []Metrics
+}
+
+func (mr *MetricsRequest) MarshalJSON() ([]byte, error) {
+	if len(mr.Metrics) == 1 {
+		return json.Marshal(mr.Metrics[0])
+	}
+	return json.Marshal(mr.Metrics)
+}
+
+func (mr *MetricsRequest) UnmarshalJSON(data []byte) error {
+	var m Metrics
+	if err := json.Unmarshal(data, &m); err == nil {
+		mr.Metrics = []Metrics{m}
+		return nil
+	}
+	return json.Unmarshal(data, &mr.Metrics)
 }
 
 type MetricsResponse struct {

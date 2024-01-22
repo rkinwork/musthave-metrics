@@ -33,6 +33,7 @@ func NewMetricsRouter(repository storage.IMetricRepository) chi.Router {
 		router.Post("/", getJSONUpdateHandler(repository))
 		router.Post("/{metricType}/{name}/{value}", getUpdateHandler(repository))
 	})
+	router.Post("/updates", getJSONUpdateHandler(repository))
 	router.Route("/value", func(router chi.Router) {
 		router.Post("/", getJSONValueHandler(repository))
 		router.Get("/{metricType}/{name}", getValueHandler(repository))
@@ -125,7 +126,7 @@ func getJSONValueHandler(repository storage.IMetricRepository) http.HandlerFunc 
 			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
 			return
 		}
-		metrics, ok := repository.Get(mRequest.Metrics)
+		metrics, ok := repository.Get(&mRequest.Metrics[0])
 		if !ok {
 			statusCode = http.StatusNotFound
 			errorResp = storage.ErrorResponse{ErrorValue: metricNotFountError}
@@ -193,19 +194,26 @@ func getJSONUpdateHandler(repository storage.IMetricRepository) http.HandlerFunc
 			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
 			return
 		}
-		if err = storage.ValidateMetric(mRequest.Metrics); err != nil {
-			statusCode = http.StatusBadRequest
-			errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
-			return
+
+		var resMetrics = make([]*storage.Metrics, len(mRequest.Metrics))
+		for num, mr := range mRequest.Metrics {
+			if err = storage.ValidateMetric(&mr); err != nil {
+				statusCode = http.StatusBadRequest
+				errorResp = storage.ErrorResponse{ErrorValue: badRequestError}
+				return
+			}
+
+			resMetrics[num], err = repository.Collect(&mr)
+			if err != nil {
+				statusCode = http.StatusInternalServerError
+				errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
+				return
+			}
 		}
 
-		metric, err := repository.Collect(mRequest.Metrics)
-		if err != nil {
-			statusCode = http.StatusInternalServerError
-			errorResp = storage.ErrorResponse{ErrorValue: problemsWithServerError}
-			return
+		if len(mRequest.Metrics) == 1 {
+			resp.Metrics = resMetrics[0]
 		}
-		resp.Metrics = metric
 		resp.ErrorResponse = nil
 
 	}
