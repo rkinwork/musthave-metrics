@@ -2,82 +2,23 @@ package storage
 
 import (
 	"context"
-	"encoding/json"
 	"github.com/rkinwork/musthave-metrics/internal/config"
-	"github.com/rkinwork/musthave-metrics/internal/logger"
-	"go.uber.org/zap"
-	"os"
+	"log"
 	"time"
 )
 
-type ILoadSave interface {
-	Save() error
-	Load() error
+type ILoadSaveClose interface {
+	Save(ctx context.Context) error
+	Load(ctx context.Context) error
+	Close(ctx context.Context) error
 }
 
 type IMetricSaver interface {
 	IMetricRepository
-	ILoadSave
-}
-
-type JSONFileSaver struct {
-	FilePath string
-	IMetricRepository
+	ILoadSaveClose
 }
 
 type NoopMetricSaver struct{}
-
-func (js *JSONFileSaver) Save() error {
-	file, err := os.OpenFile(js.FilePath, os.O_WRONLY|os.O_CREATE, 0666)
-	if err != nil {
-		return err
-	}
-	defer func(file *os.File) {
-		err = file.Close()
-		if err != nil {
-			logger.Log.Error("problems with closing file", zap.Error(err))
-		}
-	}(file)
-
-	bytes, err := json.Marshal(js.GetAllMetrics())
-	if err != nil {
-		return err
-	}
-
-	_, err = file.Write(bytes)
-	return err
-}
-
-func (js *JSONFileSaver) Load() error {
-	var metrics []Metrics
-	if _, err := os.Stat(js.FilePath); os.IsNotExist(err) {
-		return nil
-	}
-	file, err := os.Open(js.FilePath)
-	if err != nil {
-		return err
-	}
-	defer func(file *os.File) {
-		err = file.Close()
-		if err != nil {
-			logger.Log.Error("problems with closing file", zap.Error(err))
-		}
-	}(file)
-
-	data := json.NewDecoder(file)
-	err = data.Decode(&metrics)
-
-	if err != nil {
-		return err
-	}
-	for _, metric := range metrics {
-		if _, err := js.Set(&metric); err != nil {
-			logger.Log.Error("error while setting metric", zap.Error(err))
-		}
-	}
-
-	return nil
-}
 
 type MetricsSaver struct {
 	config *config.Config
@@ -86,22 +27,26 @@ type MetricsSaver struct {
 	IMetricSaver
 }
 
-func (ms *MetricsSaver) Done() {
+func (ms *MetricsSaver) Done(ctx context.Context) error {
 	<-ms.quit
+	return ms.Close(ctx)
 }
 
 func (ms *MetricsSaver) Start(ctx context.Context) {
 	if ms.config.Restore {
-		_ = ms.Load()
+		if err := ms.Load(ctx); err != nil {
+			log.Println(err)
+		}
+
 	}
 	go func() {
 		for {
 			select {
 			case <-ms.ticker.C:
-				_ = ms.Save()
+				_ = ms.Save(ctx)
 			case <-ctx.Done():
 				ms.ticker.Stop()
-				_ = ms.Save()
+				_ = ms.Save(ctx)
 				close(ms.quit)
 				return
 			}
@@ -113,13 +58,13 @@ func (ms *MetricsSaver) Collect(metric *Metrics) (*Metrics, error) {
 
 	m, err := ms.IMetricSaver.Collect(metric)
 	if ms.config.StoreInterval == 0 {
-		_ = ms.Save()
+		_ = ms.Save(context.TODO())
 	}
 	return m, err
 }
 
 func NewMetricsSaver(config *config.Config, repo IMetricSaver) *MetricsSaver {
-	var ticker *time.Ticker
+	var ticker = new(time.Ticker)
 	if config.StoreInterval > 0 {
 		ticker = time.NewTicker(config.StoreInterval)
 	}
