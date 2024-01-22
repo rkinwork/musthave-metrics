@@ -214,6 +214,14 @@ func TestJSONUpdateHandler(t *testing.T) {
 			},
 		},
 		{
+			name:    "positive flow counters",
+			payload: `[{"id": "test", "type":"counter", "delta": 1},{"id": "test", "type":"counter", "delta": 1}]`,
+			want: want{
+				code: http.StatusOK,
+				resp: `{}`,
+			},
+		},
+		{
 			name:    "positive flow gauge",
 			payload: `{"id": "test", "type":"gauge", "value": 1}`,
 			want: want{

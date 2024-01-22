@@ -55,6 +55,20 @@ func (mr *MockIMetricRepositoryMockRecorder) Collect(arg0 any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Collect", reflect.TypeOf((*MockIMetricRepository)(nil).Collect), arg0)
 }
 
+// CollectBatch mocks base method.
+func (m *MockIMetricRepository) CollectBatch(arg0 []*storage.Metrics) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CollectBatch", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// CollectBatch indicates an expected call of CollectBatch.
+func (mr *MockIMetricRepositoryMockRecorder) CollectBatch(arg0 any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CollectBatch", reflect.TypeOf((*MockIMetricRepository)(nil).CollectBatch), arg0)
+}
+
 // Delete mocks base method.
 func (m *MockIMetricRepository) Delete(arg0 *storage.Metrics) error {
 	m.ctrl.T.Helper()

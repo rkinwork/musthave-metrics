@@ -8,6 +8,7 @@ import (
 type IMetricRepository interface {
 	Get(metric *Metrics) (Metrics, bool)
 	Collect(metric *Metrics) (*Metrics, error)
+	CollectBatch(metrics []*Metrics) error
 	Set(metric *Metrics) (*Metrics, error)
 	Delete(metric *Metrics) error
 	GetAllMetrics() []Metrics
@@ -32,6 +33,16 @@ func (m *MetricRepository) Collect(metric *Metrics) (*Metrics, error) {
 		metric.Delta = &delta
 	}
 	return metric, m.storage.Set(*metric)
+}
+
+func (m *MetricRepository) CollectBatch(metrics []*Metrics) error {
+	for _, metric := range metrics {
+		_, err := m.Collect(metric)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (m *MetricRepository) Set(metrics *Metrics) (*Metrics, error) {
