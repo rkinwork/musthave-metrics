@@ -9,7 +9,23 @@ import (
 )
 
 type MetricsRequest struct {
-	*Metrics
+	Metrics []Metrics
+}
+
+func (mr *MetricsRequest) MarshalJSON() ([]byte, error) {
+	if len(mr.Metrics) == 1 {
+		return json.Marshal(mr.Metrics[0])
+	}
+	return json.Marshal(mr.Metrics)
+}
+
+func (mr *MetricsRequest) UnmarshalJSON(data []byte) error {
+	var m Metrics
+	if err := json.Unmarshal(data, &m); err == nil {
+		mr.Metrics = []Metrics{m}
+		return nil
+	}
+	return json.Unmarshal(data, &mr.Metrics)
 }
 
 type MetricsResponse struct {
@@ -30,7 +46,7 @@ func ValidateMetric(m *Metrics) error {
 	if m.MType == CounterMetric && m.Delta == nil {
 		return errors.New("delta value is required for counter metric")
 	}
-	if m.MType == CounterMetric && *m.Delta < 1 {
+	if m.MType == CounterMetric && *m.Delta < 0 {
 		return errors.New("delta value should be positive")
 	}
 	if m.MType == GaugeMetric && m.Value == nil {

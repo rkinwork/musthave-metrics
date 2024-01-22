@@ -3,9 +3,13 @@ package server
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
+	"fmt"
+	"github.com/rkinwork/musthave-metrics/internal/mocks"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/mock/gomock"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -207,6 +211,14 @@ func TestJSONUpdateHandler(t *testing.T) {
 			want: want{
 				code: http.StatusOK,
 				resp: `{"id": "test", "type":"counter", "delta": 1}`,
+			},
+		},
+		{
+			name:    "positive flow counters",
+			payload: `[{"id": "test", "type":"counter", "delta": 1},{"id": "test2", "type":"counter", "delta": 1}]`,
+			want: want{
+				code: http.StatusOK,
+				resp: `{}`,
 			},
 		},
 		{
@@ -480,6 +492,50 @@ func TestJSONGzipHandling(t *testing.T) {
 			assert.JSONEq(t, tc.want.resp, body)
 			err = repo.Delete(baseValue)
 			require.NoError(t, err)
+		})
+	}
+}
+
+func TestGetPingHandler(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := mocks.NewMockIMetricRepository(ctrl)
+	tests := []struct {
+		name       string
+		isError    bool
+		wantStatus int
+		setCase    func()
+	}{
+		{
+			name:       "Ping successful",
+			isError:    false,
+			wantStatus: http.StatusOK,
+			setCase: func() {
+				repo.EXPECT().Ping(context.Background()).Return(nil)
+			},
+		},
+		{
+			name:       "Ping failed",
+			isError:    true,
+			wantStatus: http.StatusInternalServerError,
+			setCase: func() {
+				repo.EXPECT().Ping(context.Background()).Return(fmt.Errorf("no connetion"))
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r, _ := http.NewRequest("GET", "/ping", nil)
+			w := httptest.NewRecorder()
+			tt.setCase()
+			handler := getPingHandler(repo)
+			handler.ServeHTTP(w, r)
+
+			if w.Code != tt.wantStatus {
+				t.Errorf("getPingHandler() status = %v, want %v", w.Code, tt.wantStatus)
+			}
 		})
 	}
 }
