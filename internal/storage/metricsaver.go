@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"github.com/avast/retry-go/v4"
 	"github.com/rkinwork/musthave-metrics/internal/config"
 	"log"
 	"time"
@@ -32,10 +33,12 @@ func (ms *MetricsSaver) Done(ctx context.Context) error {
 	return ms.Close(ctx)
 }
 
-func (ms *MetricsSaver) Start(ctx context.Context) {
+func (ms *MetricsSaver) Start(ctx context.Context) error {
 	if ms.config.Restore {
-		if err := ms.Load(ctx); err != nil {
+		err := retry.Do(func() error { return ms.Load(ctx) })
+		if err != nil {
 			log.Println(err)
+			return err
 		}
 
 	}
@@ -52,6 +55,7 @@ func (ms *MetricsSaver) Start(ctx context.Context) {
 			}
 		}
 	}()
+	return nil
 }
 
 func (ms *MetricsSaver) Collect(metric *Metrics) (*Metrics, error) {

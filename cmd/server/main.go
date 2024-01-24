@@ -35,6 +35,9 @@ func run() error {
 	var saver storage.IMetricSaver
 	if cnf.DatabaseDSN != "" {
 		saver, err = storage.NewPgSaver(cnf, repository)
+		if err != nil {
+			return err
+		}
 	}
 
 	if cnf.DatabaseDSN == "" {
@@ -44,7 +47,9 @@ func run() error {
 		cnf,
 		saver,
 	)
-	metricSaver.Start(ctx)
+	if err = metricSaver.Start(ctx); err != nil {
+		return err
+	}
 	serverRouter := server.NewMetricsRouter(metricSaver)
 	srv := &http.Server{Addr: cnf.Address, Handler: serverRouter}
 

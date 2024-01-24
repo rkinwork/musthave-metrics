@@ -29,7 +29,7 @@ func (ps *PgSaver) CreateTable(ctx context.Context) error {
 		}
 
 		defer tx.Rollback()
-
+		//move to templates
 		_, err = tx.ExecContext(ctx,
 			`CREATE TABLE IF NOT EXISTS public.metrics (
 				 id text not null,
@@ -71,6 +71,7 @@ func (ps *PgSaver) Save(ctx context.Context) error {
 
 	defer tx.Rollback()
 
+	//move to template make more configurable
 	if _, err := tx.ExecContext(ctx, `TRUNCATE TABLE public.metrics`); err != nil {
 		return err
 	}
