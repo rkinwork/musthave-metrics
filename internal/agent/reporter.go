@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/avast/retry-go/v4"
 	"github.com/go-resty/resty/v2"
 	"github.com/rkinwork/musthave-metrics/internal/storage"
 	"log"
 	"math/rand"
+	"net/url"
 	"runtime"
 	"strings"
 )
@@ -274,11 +277,20 @@ func (s *MetricSender) SendMetrics(metrics []storage.Metrics) error {
 	if err = gzipWriter.Close(); err != nil {
 		return err
 	}
-	_, err = s.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("Content-Encoding", "gzip").
-		SetBody(gzipBuffer.Bytes()).
-		Post(updateEndpoint)
+	err = retry.Do(func() error {
+		_, err = s.R().
+			SetHeader("Content-Type", "application/json").
+			SetHeader("Content-Encoding", "gzip").
+			SetBody(gzipBuffer.Bytes()).
+			Post(updateEndpoint)
+		return err
+	},
+		retry.RetryIf(func(err2 error) bool {
+			var urlerr *url.Error
+			return errors.As(err2, &urlerr)
+		},
+		),
+	)
 
 	return err
 }
