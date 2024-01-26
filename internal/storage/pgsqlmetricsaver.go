@@ -28,7 +28,12 @@ func (ps *PgSaver) CreateTable(ctx context.Context) error {
 			return
 		}
 
-		defer tx.Rollback()
+		defer func(tx *sql.Tx) {
+			err := tx.Rollback()
+			if err != nil {
+				logger.Log.Error("problems with rolling transaction", zap.Error(err))
+			}
+		}(tx)
 		//move to templates
 		_, err = tx.ExecContext(ctx,
 			`CREATE TABLE IF NOT EXISTS public.metrics (
@@ -50,13 +55,9 @@ func (ps *PgSaver) CreateTable(ctx context.Context) error {
 }
 
 func (ps *PgSaver) Save(ctx context.Context) error {
-	if err := ps.Ping(ctx); err != nil {
-		return err
-	}
 	if err := ps.CreateTable(ctx); err != nil {
 		return err
 	}
-
 	metrics := ps.GetAllMetrics()
 
 	values := make([][]interface{}, len(metrics))
@@ -69,10 +70,15 @@ func (ps *PgSaver) Save(ctx context.Context) error {
 		return err
 	}
 
-	defer tx.Rollback()
+	defer func(tx *sql.Tx) {
+		err := tx.Rollback()
+		if err != nil {
+			logger.Log.Error("problems with rolling transaction", zap.Error(err))
+		}
+	}(tx)
 
 	//move to template make more configurable
-	if _, err := tx.ExecContext(ctx, `TRUNCATE TABLE public.metrics`); err != nil {
+	if _, err = tx.ExecContext(ctx, `TRUNCATE TABLE public.metrics`); err != nil {
 		return err
 	}
 
@@ -80,7 +86,7 @@ func (ps *PgSaver) Save(ctx context.Context) error {
 		// execute your insert query here.
 		_, err = tx.ExecContext(ctx, "INSERT INTO public.metrics(id, mtype, delta, mvalue) VALUES($1, $2, $3, $4)", metrics[i].ID, metrics[i].MType, metrics[i].Delta, metrics[i].Value)
 		if err != nil {
-			return tx.Rollback() // don't forget to rollback here.
+			return err
 		}
 	}
 
@@ -100,26 +106,27 @@ func (ps *PgSaver) Load(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			logger.Log.Error("problems with closing query transaction", zap.Error(err))
+		}
+	}(rows)
 
-	var metrics []Metrics
 	for rows.Next() {
 		var metric Metrics
 		err = rows.Scan(&metric.ID, &metric.MType, &metric.Delta, &metric.Value)
 		if err != nil {
 			return err
 		}
-		metrics = append(metrics, metric)
+		_, err = ps.Set(&metric)
+		if err != nil {
+			logger.Log.Error("error while setting metric", zap.Error(err))
+		}
 	}
 
 	if rows.Err() != nil {
 		return rows.Err()
-	}
-
-	for _, metric := range metrics {
-		if _, err := ps.Set(&metric); err != nil {
-			logger.Log.Error("error while setting metric", zap.Error(err))
-		}
 	}
 
 	return nil
