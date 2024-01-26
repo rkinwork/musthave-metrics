@@ -18,6 +18,7 @@ type Config struct {
 	StoreInterval   time.Duration
 	FileStoragePath string
 	Restore         bool
+	DatabaseDSN     string
 }
 
 const (
@@ -80,6 +81,7 @@ func loadFromEnv(cfg *Config) error {
 		StoreInterval   int64  `env:"STORE_INTERVAL"`
 		FileStoragePath string `env:"FILE_STORAGE_PATH"`
 		Restore         bool   `env:"RESTORE"`
+		DatabaseDSN     string `env:"DATABASE_DSN"`
 	}{}
 
 	if err := env.Parse(&parsedConfig); err != nil {
@@ -100,6 +102,12 @@ func loadFromEnv(cfg *Config) error {
 	}
 	if parsedConfig.PollInterval > 0 {
 		cfg.PollInterval = time.Duration(parsedConfig.PollInterval) * time.Second
+	}
+	if parsedConfig.StoreInterval >= 0 {
+		cfg.StoreInterval = time.Duration(parsedConfig.StoreInterval) * time.Second
+	}
+	if parsedConfig.DatabaseDSN != "" {
+		cfg.DatabaseDSN = parsedConfig.DatabaseDSN
 	}
 
 	return nil
@@ -134,6 +142,7 @@ func loadFromFlagsServer(cfg *Config) error {
 	fileStoragePath := flagSet.String("f", defaultFileStoragePath, "File storage path")
 	restore := flagSet.Bool("r", defaultRestore, "Is restore metrics from file storage")
 	storeInterval := flagSet.Int64("i", defaultStoreInterval, "How often agent should dump metrics")
+	dbdsn := flagSet.String("d", "", "Database DSN in URL format")
 
 	if err := flagSet.Parse(os.Args[1:]); err != nil {
 		return fmt.Errorf("failed to parse flags: %w", err)
@@ -145,6 +154,7 @@ func loadFromFlagsServer(cfg *Config) error {
 	cfg.FileStoragePath = *fileStoragePath
 	cfg.Restore = *restore
 	cfg.StoreInterval = time.Duration(*storeInterval) * time.Second
+	cfg.DatabaseDSN = *dbdsn
 
 	return nil
 }

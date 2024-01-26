@@ -1,11 +1,18 @@
 package storage
 
+import (
+	"context"
+	"fmt"
+)
+
 type IMetricRepository interface {
 	Get(metric *Metrics) (Metrics, bool)
 	Collect(metric *Metrics) (*Metrics, error)
+	CollectBatch(metrics []*Metrics) error
 	Set(metric *Metrics) (*Metrics, error)
 	Delete(metric *Metrics) error
 	GetAllMetrics() []Metrics
+	Ping(ctx context.Context) error
 }
 
 type MetricRepository struct {
@@ -28,6 +35,16 @@ func (m *MetricRepository) Collect(metric *Metrics) (*Metrics, error) {
 	return metric, m.storage.Set(*metric)
 }
 
+func (m *MetricRepository) CollectBatch(metrics []*Metrics) error {
+	for _, metric := range metrics {
+		_, err := m.Collect(metric)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (m *MetricRepository) Set(metrics *Metrics) (*Metrics, error) {
 	return metrics, m.storage.Set(*metrics)
 }
@@ -38,6 +55,10 @@ func (m *MetricRepository) Delete(metric *Metrics) error {
 
 func (m *MetricRepository) GetAllMetrics() []Metrics {
 	return m.storage.IterMetrics()
+}
+
+func (m *MetricRepository) Ping(_ context.Context) error {
+	return fmt.Errorf("not supported method")
 }
 
 func NewRepository() IMetricRepository {

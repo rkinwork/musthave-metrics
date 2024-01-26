@@ -28,20 +28,33 @@ func run() error {
 	if err != nil {
 		log.Fatalf("problems with config parsing %e", err)
 	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	repository := storage.NewRepository()
+	var saver storage.IMetricSaver
+	if cnf.DatabaseDSN != "" {
+		saver, err = storage.NewPgSaver(cnf, repository)
+		if err != nil {
+			return err
+		}
+	}
+
+	if cnf.DatabaseDSN == "" {
+		saver = storage.NewFileSaver(*cnf, repository)
+	}
 	metricSaver := storage.NewMetricsSaver(
 		cnf,
-		&storage.JSONFileSaver{FilePath: cnf.FileStoragePath, IMetricRepository: storage.NewRepository()},
+		saver,
 	)
-	metricSaver.Start(ctx)
+	if err = metricSaver.Start(ctx); err != nil {
+		return err
+	}
 	serverRouter := server.NewMetricsRouter(metricSaver)
 	srv := &http.Server{Addr: cnf.Address, Handler: serverRouter}
 
 	go func() {
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err = srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			log.Fatalf("listen and serve returned err: %v", err)
 		}
 	}()
@@ -50,6 +63,6 @@ func run() error {
 	if err = srv.Shutdown(context.TODO()); err != nil { // Use here context with a required timeout
 		log.Printf("server shutdown returned an err: %v\n", err)
 	}
-	metricSaver.Done()
+	err = metricSaver.Done(context.TODO())
 	return err
 }
